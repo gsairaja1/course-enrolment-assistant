@@ -21,7 +21,7 @@ The system:
 **Important:** Python rules make the actual enrolment decision. AI is used for language understanding and response generation.
 
 
-![Uploading Course enrolment assistant architecture.png…]()
+<img width="1536" height="1024" alt="Course enrolment assistant architecture" src="https://github.com/user-attachments/assets/a1479283-e14e-41c6-9d47-c5f812261761" />
 
 ## 2. Objective
 
