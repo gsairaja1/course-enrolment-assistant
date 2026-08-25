@@ -1,0 +1,8 @@
+student_id,name,year,programme,fees_status
+S-101,Amara Nwosu,2,Computer Science,paid
+S-102,Ben Halloran,2,Computer Science,unpaid
+S-103,Chen Wei,3,Data Science,paid
+S-104,Dilara Yilmaz,1,Computer Science,paid
+S-105,Eli Rosen,3,Data Science,paid
+S-106,Fatima Sadiq,2,Mathematics,PAID
+S-107,Grace Mbeki,,Data Science,paid

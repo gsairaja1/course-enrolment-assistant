@@ -1,0 +1,8 @@
+course_code,title,credits,capacity,term,day,start,end
+CS101,Programming Foundations,15,120,autumn,Mon,09:00,11:00
+CS201,Algorithms,15,60,autumn,Tue,09:00,11:00
+CS202,Databases,15,40,autumn,Wed,14:00,16:00
+CS301,Machine Learning,20,30,autumn,Tue,10:00,12:00
+CS310,Distributed Systems,20,25,autumn,Thu,09:00,11:00
+MA150,Statistics,15,90,autumn,Wed,14:00,16:00
+DS220,Data Visualisation,10,35,autumn,Fri,13:00,15:00
