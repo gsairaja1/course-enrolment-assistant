@@ -18,7 +18,6 @@ HANDBOOK_DIR = BASE_DIR / "data" / "handbook"
 
 print("Loading search model...")
 
-
 model = SentenceTransformer(
     "BAAI/bge-small-en-v1.5"
 )
@@ -27,10 +26,15 @@ print("Search model loaded.")
 
 
 # --------------------------------------------------
-# READ HANDBOOK FILES
+# READ AND CHUNK HANDBOOK FILES
 # --------------------------------------------------
 
 documents = []
+
+# Number of words in each searchable chunk.
+# Smaller chunks make retrieval more focused than
+# embedding one entire handbook file.
+CHUNK_SIZE = 150
 
 for file_path in sorted(HANDBOOK_DIR.glob("*.md")):
 
@@ -38,16 +42,27 @@ for file_path in sorted(HANDBOOK_DIR.glob("*.md")):
         encoding="utf-8"
     ).strip()
 
-    if text:
+    if not text:
+        continue
 
-        documents.append({
-            "filename": file_path.name,
-            "text": text
-        })
+    words = text.split()
+
+    for start in range(0, len(words), CHUNK_SIZE):
+
+        chunk = " ".join(
+            words[start:start + CHUNK_SIZE]
+        ).strip()
+
+        if chunk:
+
+            documents.append({
+                "filename": file_path.name,
+                "text": chunk
+            })
 
 
 print(
-    f"Loaded {len(documents)} handbook files."
+    f"Loaded {len(documents)} handbook chunks."
 )
 
 
@@ -55,15 +70,24 @@ print(
 # CREATE VECTORS
 # --------------------------------------------------
 
-texts = [
-    document["text"]
-    for document in documents
-]
+if documents:
 
-document_vectors = model.encode(
-    texts,
-    normalize_embeddings=True
-)
+    texts = [
+        document["text"]
+        for document in documents
+    ]
+
+    document_vectors = model.encode(
+        texts,
+        normalize_embeddings=True
+    )
+
+else:
+
+    document_vectors = np.empty(
+        (0, 384),
+        dtype=np.float32
+    )
 
 
 # --------------------------------------------------
@@ -72,9 +96,17 @@ document_vectors = model.encode(
 
 def search(question, k=3):
     """
-    Search the handbook and return the best
-    matching files with similarity scores.
+    Search the handbook using semantic/vector similarity.
+
+    Returns the best matching handbook chunks with:
+    - file
+    - text
+    - similarity score
     """
+
+    if not documents:
+
+        return []
 
     question_vector = model.encode(
         [question],
@@ -98,9 +130,10 @@ def search(question, k=3):
 
         results.append({
             "file": documents[index]["filename"],
+            "text": documents[index]["text"],
             "score": round(
                 float(scores[index]),
-                2
+                3
             )
         })
 
@@ -112,10 +145,6 @@ def search(question, k=3):
 # --------------------------------------------------
 
 if __name__ == "__main__":
-
-    # --------------------------------------------------
-    # TASK 7 - TEST ALL FIVE RULES
-    # --------------------------------------------------
 
     tests = [
         {
@@ -171,7 +200,7 @@ if __name__ == "__main__":
 
     print()
     print("=" * 70)
-    print("TASK 7 - HANDBOOK SEARCH TEST")
+    print("TASK 7 - HANDBOOK VECTOR SEARCH TEST")
     print("=" * 70)
 
 
@@ -182,10 +211,15 @@ if __name__ == "__main__":
     # RUN ALL FIVE TESTS
     # --------------------------------------------------
 
-    for number, test in enumerate(tests, start=1):
+    for number, test in enumerate(
+        tests,
+        start=1
+    ):
 
         print()
-        print(f"TEST {number}: {test['rule']}")
+        print(
+            f"TEST {number}: {test['rule']}"
+        )
         print("-" * 70)
 
         print("Question:")
@@ -199,6 +233,12 @@ if __name__ == "__main__":
             k=3
         )
 
+        if not results:
+
+            print("No handbook results found.")
+            print("RESULT: FAIL")
+            continue
+
         for position, result in enumerate(
             results,
             start=1
@@ -208,6 +248,10 @@ if __name__ == "__main__":
                 f"{position}. "
                 f"{result['file']} "
                 f"{result['score']}"
+            )
+
+            print(
+                f"   Text: {result['text'][:200]}..."
             )
 
 
@@ -239,7 +283,8 @@ if __name__ == "__main__":
             print("RESULT: FAIL")
 
             print(
-                "This question may need improvement."
+                "The vector search ranked a different "
+                "handbook file first."
             )
 
 
@@ -259,13 +304,14 @@ if __name__ == "__main__":
     if passed == len(tests):
 
         print(
-            "All five handbook searches passed."
+            "All five handbook vector searches passed."
         )
 
     else:
 
         print(
-            "Some searches need better questions."
+            "Some searches need better questions, "
+            "chunks, or handbook content."
         )
 
     print("=" * 70)

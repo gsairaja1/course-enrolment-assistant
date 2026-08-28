@@ -1,0 +1,33 @@
+/* Student-facing handbook text */
+.handbook-text {
+    font-size: 13px !important;
+    line-height: 1.45 !important;
+    font-weight: 400 !important;
+    color: inherit !important;
+    white-space: normal !important;
+    margin: 4px 0 12px 0 !important;
+}
+
+/* Keep handbook filename/score slightly smaller than headings */
+.handbook-text + * {
+    font-size: 13px !important;
+}
+
+/* Make Streamlit caption text compact */
+[data-testid="stCaptionContainer"] {
+    font-size: 12px !important;
+}
+
+/* Avoid oversized markdown headings inside handbook content */
+.handbook-text h1,
+.handbook-text h2,
+.handbook-text h3,
+.handbook-text h4,
+.handbook-text h5,
+.handbook-text h6,
+.handbook-text p {
+    font-size: 13px !important;
+    line-height: 1.45 !important;
+    margin: 0 0 6px 0 !important;
+    font-weight: 400 !important;
+}

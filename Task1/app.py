@@ -1,13 +1,13 @@
 from pathlib import Path
-import json
 import re
 
 import requests
 import streamlit as st
 
-# --------------------------------------------------
+
+# ============================================================
 # OPTIONAL PROJECT MODULES
-# --------------------------------------------------
+# ============================================================
 
 try:
     from ai import identify_course as ai_identify_course
@@ -25,9 +25,9 @@ except Exception:
     handbook_search = None
 
 
-# --------------------------------------------------
+# ============================================================
 # PAGE SETUP
-# --------------------------------------------------
+# ============================================================
 
 st.set_page_config(
     page_title="Course Enrolment Assistant",
@@ -36,25 +36,35 @@ st.set_page_config(
 )
 
 
-# --------------------------------------------------
+# ============================================================
+# CUSTOM CSS
+# ============================================================
+
+CSS_FILE = Path(__file__).resolve().parent / "style.css"
+
+if CSS_FILE.exists():
+    st.markdown(
+        f"<style>{CSS_FILE.read_text(encoding='utf-8')}</style>",
+        unsafe_allow_html=True,
+    )
+
+
+# ============================================================
 # PATHS
-# --------------------------------------------------
+# ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-
-# app.py is inside Task1
 PROJECT_DIR = BASE_DIR.parent
 
 DATA_DIR = PROJECT_DIR / "data"
 HANDBOOK_DIR = DATA_DIR / "handbook"
-REQUESTS_DIR = DATA_DIR / "requests"
 
 API_URL = "http://127.0.0.1:8000"
 
 
-# --------------------------------------------------
+# ============================================================
 # COURSE DATA
-# --------------------------------------------------
+# ============================================================
 
 COURSES = {
     "CS101": "Programming Foundations",
@@ -67,9 +77,9 @@ COURSES = {
 }
 
 
-# --------------------------------------------------
+# ============================================================
 # TASK 10 EXPECTED DATA
-# --------------------------------------------------
+# ============================================================
 
 TASK10_REQUESTS = [
     {
@@ -91,7 +101,7 @@ TASK10_REQUESTS = [
         "message": "Can I add Distributed Systems?",
         "expected_course": "CS310",
         "expected_reasons": [
-            "full, 25 of 25"
+            "course is full, 25 of 25"
         ],
         "expected_pages": [
             "capacity.md",
@@ -157,19 +167,17 @@ TASK10_REQUESTS = [
 ]
 
 
-# --------------------------------------------------
-# HELPER FUNCTIONS
-# --------------------------------------------------
+# ============================================================
+# FASTAPI HELPER
+# ============================================================
 
 def api_get(endpoint):
-    """
-    Safely call the FastAPI backend.
-    """
+    """Call the FastAPI backend safely."""
 
     try:
         response = requests.get(
             f"{API_URL}{endpoint}",
-            timeout=30
+            timeout=30,
         )
 
         try:
@@ -183,8 +191,7 @@ def api_get(endpoint):
         return None, {
             "error": (
                 "Cannot connect to FastAPI. "
-                "Start the backend with: "
-                "uvicorn api:app --reload"
+                "Start it with: uvicorn api:app --reload"
             )
         }
 
@@ -199,10 +206,262 @@ def api_get(endpoint):
         }
 
 
-def load_handbook_text(filename):
+# ============================================================
+# COURSE IDENTIFICATION
+# ============================================================
+
+def identify_course_fallback(message):
+    """Simple non-AI course-identification fallback."""
+
+    text = message.lower()
+
+    for code in COURSES:
+        if re.search(
+            rf"\b{re.escape(code.lower())}\b",
+            text,
+        ):
+            return code
+
+    for code, title in COURSES.items():
+        if title.lower() in text:
+            return code
+
+    aliases = {
+        "algorithms": "CS201",
+        "programming foundations": "CS101",
+        "databases": "CS202",
+        "machine learning": "CS301",
+        "distributed systems": "CS310",
+        "data visualisation": "DS220",
+        "data visualization": "DS220",
+        "statistics": "MA150",
+    }
+
+    for phrase, code in aliases.items():
+        if phrase in text:
+            return code
+
+    return None
+
+
+def identify_course(message):
+    """Use AI course identification, then fall back safely."""
+
+    if ai_identify_course is not None:
+
+        try:
+            result = ai_identify_course(
+                message,
+                list(COURSES.items()),
+            )
+
+            if isinstance(result, dict):
+
+                code = result.get(
+                    "course_code"
+                )
+
+                if code in COURSES:
+                    return code
+
+            if isinstance(result, str):
+
+                if result in COURSES:
+                    return result
+
+        except Exception as error:
+            print(
+                f"Course AI failed: {error}"
+            )
+
+    return identify_course_fallback(
+        message
+    )
+
+
+# ============================================================
+# VECTOR / RAG HANDBOOK RETRIEVAL
+# ============================================================
+
+def retrieve_handbook(
+    question,
+    reasons,
+    k=5,
+):
     """
-    Read one handbook markdown file.
+    Use search.py to retrieve handbook chunks.
+
+    search.py performs:
+        question -> embedding -> vector similarity
+        -> top handbook chunks
+
+    Returns:
+        pages
+        handbook_text
+        raw search results
     """
+
+    if handbook_search is None:
+        return [], "", []
+
+    reason_text = " ".join(
+        reasons or []
+    )
+
+    retrieval_query = (
+        f"{question}\n"
+        f"Verified enrolment reasons: {reason_text}"
+    )
+
+    try:
+
+        results = handbook_search(
+            retrieval_query,
+            k=k,
+        )
+
+    except Exception as error:
+
+        print(
+            f"Handbook vector search failed: {error}"
+        )
+
+        return [], "", []
+
+    if not results:
+        return [], "", []
+
+    pages = []
+    chunks = []
+
+    for result in results:
+
+        filename = str(
+            result.get(
+                "file",
+                ""
+            )
+        ).strip()
+
+        text = str(
+            result.get(
+                "text",
+                ""
+            )
+        ).strip()
+
+        if not filename:
+            continue
+
+        if filename not in pages:
+            pages.append(filename)
+
+        if text:
+
+            chunks.append(
+                f"--- {filename} ---\n{text}"
+            )
+
+    handbook_text = "\n\n".join(
+        chunks
+    )
+
+    return (
+        pages,
+        handbook_text,
+        results,
+    )
+
+
+# ============================================================
+# HANDBOOK FALLBACK
+# ============================================================
+
+def get_handbook_pages_fallback(
+    reasons
+):
+    """
+    Backup only.
+
+    Normal application retrieval uses vector search.
+    """
+
+    pages = []
+
+    for reason in reasons or []:
+
+        lower = reason.lower()
+
+        if "fee" in lower:
+
+            if "fees.md" not in pages:
+                pages.append(
+                    "fees.md"
+                )
+
+        if (
+            "prerequisite" in lower
+            or "grade" in lower
+        ):
+
+            if "prerequisites.md" not in pages:
+                pages.append(
+                    "prerequisites.md"
+                )
+
+            if "advice.md" not in pages:
+                pages.append(
+                    "advice.md"
+                )
+
+            if "grade" in lower:
+
+                if "waivers.md" not in pages:
+                    pages.append(
+                        "waivers.md"
+                    )
+
+        if "full" in lower:
+
+            if "capacity.md" not in pages:
+                pages.append(
+                    "capacity.md"
+                )
+
+            if "advice.md" not in pages:
+                pages.append(
+                    "advice.md"
+                )
+
+        if "clash" in lower:
+
+            if "timetable.md" not in pages:
+                pages.append(
+                    "timetable.md"
+                )
+
+        if "credit" in lower:
+
+            if "credit_limit.md" not in pages:
+                pages.append(
+                    "credit_limit.md"
+                )
+
+    if (
+        not reasons
+        and "advice.md" not in pages
+    ):
+        pages.append(
+            "advice.md"
+        )
+
+    return pages
+
+
+def load_handbook_text(
+    filename
+):
+    """Load one handbook file."""
 
     path = HANDBOOK_DIR / filename
 
@@ -210,6 +469,7 @@ def load_handbook_text(filename):
         return ""
 
     try:
+
         return path.read_text(
             encoding="utf-8"
         ).strip()
@@ -218,72 +478,18 @@ def load_handbook_text(filename):
         return ""
 
 
-def get_handbook_pages(reasons):
-    """
-    Decide which handbook pages are relevant.
-
-    This decision is made by Python rules,
-    not by the AI.
-    """
-
-    pages = []
-
-    for reason in reasons:
-
-        lower = reason.lower()
-
-        if "fee" in lower:
-            if "fees.md" not in pages:
-                pages.append("fees.md")
-
-        if (
-            "prerequisite" in lower
-            or "grade" in lower
-        ):
-            if "prerequisites.md" not in pages:
-                pages.append("prerequisites.md")
-
-            if "advice.md" not in pages:
-                pages.append("advice.md")
-
-            # A prerequisite/grade problem may involve
-            # the waiver guidance.
-            if "grade" in lower:
-                if "waivers.md" not in pages:
-                    pages.append("waivers.md")
-
-        if "full" in lower:
-            if "capacity.md" not in pages:
-                pages.append("capacity.md")
-
-            if "advice.md" not in pages:
-                pages.append("advice.md")
-
-        if "clash" in lower:
-            if "timetable.md" not in pages:
-                pages.append("timetable.md")
-
-        if "credit" in lower:
-            if "credit_limit.md" not in pages:
-                pages.append("credit_limit.md")
-
-    # No blocking reason
-    if not reasons:
-        pages.append("advice.md")
-
-    return pages
-
-
-def get_handbook_content(pages):
-    """
-    Return the actual text of the selected handbook pages.
-    """
+def get_handbook_content(
+    pages
+):
+    """Load fallback handbook files."""
 
     content = {}
 
-    for page in pages:
+    for page in pages or []:
 
-        text = load_handbook_text(page)
+        text = load_handbook_text(
+            page
+        )
 
         if text:
             content[page] = text
@@ -291,14 +497,18 @@ def get_handbook_content(pages):
     return content
 
 
+# ============================================================
+# PYTHON-VERIFIED ALTERNATIVES
+# ============================================================
+
 def get_eligible_alternatives(
     student_id,
-    blocked_course
+    blocked_course,
 ):
     """
-    Use the Python enrolment rules to find alternatives.
+    Use Python/FastAPI rules to find eligible alternatives.
 
-    The AI is NOT allowed to decide eligibility.
+    The AI does not decide eligibility.
     """
 
     alternatives = []
@@ -315,164 +525,70 @@ def get_eligible_alternatives(
         if status != 200:
             continue
 
-        result = data.get("data", {})
+        result = data.get(
+            "data",
+            {}
+        )
 
         if result.get("allowed") is True:
+
             alternatives.append({
                 "course_code": code,
-                "title": COURSES[code]
+                "title": COURSES[code],
             })
 
     return alternatives
 
 
-def identify_course_fallback(message):
-    """
-    Non-AI fallback.
-
-    This is used only if the AI module cannot be imported
-    or cannot identify the course.
-    """
-
-    text = message.lower()
-
-    # Exact course code
-    for code in COURSES:
-
-        if re.search(
-            rf"\b{re.escape(code.lower())}\b",
-            text
-        ):
-            return code
-
-    # Course titles
-    for code, title in COURSES.items():
-
-        if title.lower() in text:
-            return code
-
-    # Small wording fallback
-    aliases = {
-        "algorithms": "CS201",
-        "programming foundations": "CS101",
-        "databases": "CS202",
-        "machine learning": "CS301",
-        "distributed systems": "CS310",
-        "data visualisation": "DS220",
-        "data visualization": "DS220",
-        "statistics": "MA150",
-    }
-
-    for phrase, code in aliases.items():
-
-        if phrase in text:
-            return code
-
-    return None
-
-
-def identify_course(message):
-    """
-    Use Task 8 AI first.
-
-    If the imported AI function is unavailable,
-    use the safe local fallback.
-    """
-
-    if ai_identify_course is not None:
-
-        try:
-
-            result = ai_identify_course(
-                message,
-                list(COURSES.items())
-            )
-
-            # Support dictionary result
-            if isinstance(result, dict):
-
-                code = result.get("course_code")
-
-                if code in COURSES:
-                    return code
-
-            # Support direct string result
-            if isinstance(result, str):
-
-                if result in COURSES:
-                    return result
-
-        except Exception:
-            pass
-
-    return identify_course_fallback(message)
-
+# ============================================================
+# FINAL REPLY VALIDATION
+# ============================================================
 
 def validate_reply(
     reply,
     reasons,
     pages,
-    alternatives=None
+    alternatives=None,
 ):
     """
-    Validate the final response.
-
-    Checks:
-    1. Every rule reason appears.
-    2. Every number/course code is allowed.
-    3. Required handbook pages are named.
-    4. Waiver mentions must include approval authority.
+    Validate final output against verified Python facts.
     """
+
+    alternatives = alternatives or []
 
     if not reply:
         return False, "Reply is empty."
 
     reply_lower = reply.lower()
+    normalized_reply = " ".join(
+        reply_lower.split()
+    )
 
-    # --------------------------------------------------
-    # 1. Every reason must appear
-    # --------------------------------------------------
+    for reason in reasons or []:
 
-    for reason in reasons:
+        normalized_reason = " ".join(
+            reason.lower().split()
+        )
 
-        if reason.lower() not in reply_lower:
+        if normalized_reason not in normalized_reply:
 
-            # Allow a normalized whitespace comparison
-            normalized_reply = " ".join(
-                reply_lower.split()
+            return (
+                False,
+                f"Missing reason: {reason}",
             )
 
-            normalized_reason = " ".join(
-                reason.lower().split()
-            )
-
-            if normalized_reason not in normalized_reply:
-
-                return (
-                    False,
-                    f"Missing reason: {reason}"
-                )
-
-    # --------------------------------------------------
-    # 2. Required handbook pages
-    # --------------------------------------------------
-
-    for page in pages:
+    for page in pages or []:
 
         if page.lower() not in reply_lower:
 
             return (
                 False,
-                f"Missing handbook page: {page}"
+                f"Missing handbook page: {page}",
             )
-
-    # --------------------------------------------------
-    # 3. Allowed course codes
-    # --------------------------------------------------
 
     mentioned_codes = re.findall(
         r"\b[A-Z]{2,4}\d{3}\b",
-        reply.upper()
+        reply.upper(),
     )
 
     for code in mentioned_codes:
@@ -481,63 +597,49 @@ def validate_reply(
 
             return (
                 False,
-                f"Unknown course code in reply: {code}"
+                f"Unknown course code in reply: {code}",
             )
-
-    # --------------------------------------------------
-    # 4. Allowed numbers
-    #
-    # Extract all numeric values from reasons,
-    # handbook pages and alternatives.
-    # --------------------------------------------------
 
     allowed_numbers = set()
 
-    for reason in reasons:
+    for reason in reasons or []:
 
         for number in re.findall(
             r"\b\d+\b",
-            reason
+            reason,
         ):
-            allowed_numbers.add(number)
+            allowed_numbers.add(
+                number
+            )
 
-    for alternative in alternatives or []:
-
-        code = alternative.get(
-            "course_code",
-            ""
-        )
+    for alternative in alternatives:
 
         for number in re.findall(
             r"\d+",
-            code
+            alternative.get(
+                "course_code",
+                "",
+            ),
         ):
-            allowed_numbers.add(number)
+            allowed_numbers.add(
+                number
+            )
 
-    # Page names can contain no meaningful
-    # student/course numeric data, so they are ignored.
-
-    reply_numbers = re.findall(
+    for number in re.findall(
         r"\b\d+\b",
-        reply
-    )
-
-    for number in reply_numbers:
+        reply,
+    ):
 
         if number not in allowed_numbers:
 
             return (
                 False,
-                f"Number not supplied to AI: {number}"
+                f"Number not supplied to AI: {number}",
             )
-
-    # --------------------------------------------------
-    # 5. Waiver safety
-    # --------------------------------------------------
 
     if "waiver" in reply_lower:
 
-        approval_words = [
+        authority_terms = [
             "course leader",
             "department",
             "departmental",
@@ -545,26 +647,25 @@ def validate_reply(
             "programme leader",
             "authorised",
             "authorized",
+            "approval",
             "approver",
-            "approval"
         ]
 
         if not any(
-            word in reply_lower
-            for word in approval_words
+            term in reply_lower
+            for term in authority_terms
         ):
 
             return (
                 False,
-                "Waiver mentioned without approval authority."
+                "Waiver mentioned without approval authority.",
             )
 
-        # Never allow approval language
         unsafe_phrases = [
             "waiver approved",
             "enrolment approved",
             "approved for enrolment",
-            "you are approved"
+            "you are approved",
         ]
 
         for phrase in unsafe_phrases:
@@ -573,48 +674,63 @@ def validate_reply(
 
                 return (
                     False,
-                    "Reply incorrectly records approval."
+                    "Reply incorrectly records approval.",
                 )
 
     return True, "PASS"
 
 
+# ============================================================
+# SAFE FINAL RESPONSE
+# ============================================================
+
 def make_safe_reply(
     reasons,
     pages,
-    alternatives=None
+    alternatives=None,
 ):
     """
-    Deterministic fallback.
+    Guaranteed fact-based reply.
 
-    This never invents facts.
-
-    If waivers.md is relevant, the reply gives the
-    safe approval-authority guidance required by the
-    validation rules. It never claims that enrolment
-    or a waiver has already been approved.
+    Used if the AI output fails validation.
     """
+
+    reasons = reasons or []
+    pages = pages or []
+    alternatives = alternatives or []
+
+    lines = []
 
     if reasons:
 
-        lines = [
+        lines.append(
             "The following issues prevent enrolment:"
-        ]
+        )
 
         for reason in reasons:
-            lines.append(f"- {reason}")
+
+            lines.append(
+                f"- {reason}"
+            )
 
     else:
 
-        lines = [
+        lines.append(
             "There are no blocking reasons for enrolment."
-        ]
+        )
 
-    lines.append("")
-    lines.append("Relevant handbook page(s):")
+    if pages:
 
-    for page in pages:
-        lines.append(f"- {page}")
+        lines.append("")
+        lines.append(
+            "Relevant handbook page(s):"
+        )
+
+        for page in pages:
+
+            lines.append(
+                f"- {page}"
+            )
 
     if alternatives:
 
@@ -634,123 +750,185 @@ def make_safe_reply(
                 f"{alternative['title']}"
             )
 
-    # --------------------------------------------------
-    # WAIVER SAFETY
-    # --------------------------------------------------
-    # R5 includes waivers.md. If the fallback mentions
-    # a waiver, it must also state who has authority
-    # to approve it. Never claim approval has happened.
-    # --------------------------------------------------
-
     if "waivers.md" in pages:
 
         lines.append("")
 
         lines.append(
             "You can ask the course leader about a waiver. "
-            "The course leader must approve the waiver; "
-            "this does not approve enrolment."
+            "The course leader decides whether the waiver "
+            "can be approved; this does not approve enrolment."
         )
 
     return "\n".join(lines)
 
 
+# ============================================================
+# REPLY.PY CONNECTION
+# ============================================================
+
 def generate_reply(
     reasons,
     handbook_content,
     pages,
-    alternatives=None
+    search_results=None,
+    alternatives=None,
 ):
     """
-    Generate a student-facing reply.
+    Pass the actual RAG handbook content to reply.py.
 
-    The AI receives ONLY:
-    - reasons
-    - handbook text
-    - handbook page names
-    - Python-verified alternatives
-
-    If AI generation is unavailable or invalid,
-    a deterministic safe reply is returned.
+    Connection:
+        app.py -> reply.py
+        reasons
+        handbook
+        pages
+        search_results
+        alternatives
     """
 
-    # --------------------------------------------------
-    # AI attempt
-    # --------------------------------------------------
+    alternatives = alternatives or []
 
     if ai_generate_reply is not None:
 
         try:
 
-            result = ai_generate_reply(
-                reasons=reasons,
-                handbook=handbook_content,
-                pages=pages,
-                alternatives=alternatives or []
-            )
+            reply_kwargs = {
+                "reasons": reasons,
+                "handbook": handbook_content,
+                "pages": pages,
+                "alternatives": alternatives,
+            }
 
-            if isinstance(result, dict):
+            # Pass the raw RAG results when reply.py supports them.
+            # This keeps app.py compatible with older reply.py versions.
+            try:
+                import inspect
 
-                reply = result.get(
-                    "reply",
-                    ""
+                if "search_results" in inspect.signature(
+                    ai_generate_reply
+                ).parameters:
+                    reply_kwargs["search_results"] = search_results or []
+            except Exception:
+                pass
+
+            result = ai_generate_reply(**reply_kwargs)
+
+            if (
+                isinstance(result, tuple)
+                and len(result) == 2
+            ):
+
+                reply = str(
+                    result[0]
                 )
+
+                source = str(
+                    result[1]
+                )
+
+            elif isinstance(
+                result,
+                dict
+            ):
+
+                reply = str(
+                    result.get(
+                        "reply",
+                        ""
+                    )
+                )
+
+                source = "AI"
 
             else:
 
-                reply = str(result)
+                reply = str(
+                    result
+                )
 
-            valid, _ = validate_reply(
-                reply,
-                reasons,
-                pages,
-                alternatives
+                source = "AI"
+
+            valid, message = (
+                validate_reply(
+                    reply,
+                    reasons,
+                    pages,
+                    alternatives,
+                )
             )
 
             if valid:
-                return reply, "AI"
 
-        except Exception:
-            pass
+                return reply, source
 
-    # --------------------------------------------------
-    # Safe deterministic response
-    # --------------------------------------------------
+            print(
+                f"App validation failed: {message}"
+            )
+
+        except Exception as error:
+
+            print(
+                f"reply.py failed: {error}"
+            )
 
     return (
         make_safe_reply(
             reasons,
             pages,
-            alternatives
+            alternatives,
         ),
-        "SAFE"
+        "SAFE",
     )
 
 
-def compare_lists(actual, expected):
+# ============================================================
+# TASK 10 HELPERS
+# ============================================================
+
+def pages_cover_expected(
+    retrieved,
+    expected,
+):
     """
-    Compare lists without changing their meaning.
+    RAG can return additional useful pages.
+
+    Every expected page must be present.
     """
 
-    return actual == expected
+    retrieved_set = set(
+        retrieved or []
+    )
+
+    return all(
+        page in retrieved_set
+        for page in expected or []
+    )
 
 
-def run_task10_case(test):
-    """
-    Run one complete Task 10 request.
-    """
+def run_task10_case(
+    test
+):
+    """Run one complete Task 10 request."""
 
-    student_id = test["student_id"]
-    message = test["message"]
+    student_id = test[
+        "student_id"
+    ]
 
-    # --------------------------------------------------
-    # Step 1 - AI course identification
-    # --------------------------------------------------
+    message = test[
+        "message"
+    ]
 
-    course_code = identify_course(message)
+    # --------------------------------------------------------
+    # Step 1 - course identification
+    # --------------------------------------------------------
+
+    course_code = identify_course(
+        message
+    )
 
     course_pass = (
-        course_code == test["expected_course"]
+        course_code
+        == test["expected_course"]
     )
 
     if not course_pass:
@@ -760,18 +938,22 @@ def run_task10_case(test):
             "found_course": course_code,
             "course_pass": False,
             "reasons": [],
+            "reasons_pass": False,
             "pages": [],
+            "pages_pass": False,
+            "retrieved_chunks": [],
             "reply": (
                 "I could not identify the requested course."
             ),
             "reply_pass": False,
             "overall": False,
             "alternatives": [],
+            "reply_source": "SAFE",
         }
 
-    # --------------------------------------------------
-    # Step 2 - Python enrolment rules
-    # --------------------------------------------------
+    # --------------------------------------------------------
+    # Step 2 - Python rules
+    # --------------------------------------------------------
 
     status, data = api_get(
         f"/check/{student_id}/{course_code}"
@@ -784,96 +966,117 @@ def run_task10_case(test):
             "found_course": course_code,
             "course_pass": True,
             "reasons": [],
+            "reasons_pass": False,
             "pages": [],
+            "pages_pass": False,
+            "retrieved_chunks": [],
             "reply": (
                 "Unable to complete the enrolment check."
             ),
             "reply_pass": False,
             "overall": False,
             "alternatives": [],
+            "reply_source": "SAFE",
         }
 
-    result = data.get("data", {})
+    result = data.get(
+        "data",
+        {}
+    )
 
     reasons = result.get(
         "reasons",
         []
     )
 
-    # --------------------------------------------------
-    # Step 3 - Handbook pages
-    # --------------------------------------------------
+    # --------------------------------------------------------
+    # Step 3 - REAL VECTOR / RAG retrieval
+    # --------------------------------------------------------
 
-    pages = get_handbook_pages(
-        reasons
+    (
+        pages,
+        handbook_text,
+        search_results,
+    ) = retrieve_handbook(
+        question=message,
+        reasons=reasons,
+        k=5,
     )
 
-    handbook_content = get_handbook_content(
-        pages
-    )
+    # Search fallback only if vector search fails.
+    if not pages:
 
-    # --------------------------------------------------
+        pages = (
+            get_handbook_pages_fallback(
+                reasons
+            )
+        )
+
+        fallback_content = (
+            get_handbook_content(
+                pages
+            )
+        )
+
+        handbook_text = "\n\n".join(
+            f"--- {filename} ---\n{text}"
+            for filename, text
+            in fallback_content.items()
+        )
+
+    # --------------------------------------------------------
     # Step 4 - Python alternatives
-    # --------------------------------------------------
+    # --------------------------------------------------------
 
     alternatives = []
 
-    # --------------------------------------------------
-    # Alternatives are only relevant for:
-    # 1. A course that is full
-    # 2. A missing prerequisite
-    #
-    # A timetable clash, unpaid fees, credit limit,
-    # or grade issue does not automatically trigger
-    # alternative-course suggestions.
-    # --------------------------------------------------
+    reason_text = " ".join(
+        reasons
+    ).lower()
 
-    reason_text = " ".join(reasons).lower()
-
-    needs_alternative = (
+    if (
         "full" in reason_text
         or "prerequisite" in reason_text
-    )
+    ):
 
-    if needs_alternative:
-
-        alternatives = get_eligible_alternatives(
-            student_id,
-            course_code
+        alternatives = (
+            get_eligible_alternatives(
+                student_id,
+                course_code,
+            )
         )
 
-    # --------------------------------------------------
-    # Step 5 - Generate final answer
-    # --------------------------------------------------
+    # --------------------------------------------------------
+    # Step 5 - reply.py
+    # --------------------------------------------------------
 
     reply, source = generate_reply(
         reasons=reasons,
-        handbook_content=handbook_content,
+        handbook_content=handbook_text,
         pages=pages,
-        alternatives=alternatives
+        search_results=search_results,
+        alternatives=alternatives,
     )
 
-    # --------------------------------------------------
-    # Step 6 - Validate reply
-    # --------------------------------------------------
+    # --------------------------------------------------------
+    # Step 6 - final safety validation
+    # --------------------------------------------------------
 
     reply_pass, validation_message = (
         validate_reply(
             reply,
             reasons,
             pages,
-            alternatives
+            alternatives,
         )
     )
 
-    # If AI response somehow fails,
-    # force deterministic safe response.
     if not reply_pass:
 
         reply = make_safe_reply(
             reasons,
             pages,
-            alternatives
+            alternatives,
         )
 
         reply_pass, validation_message = (
@@ -881,24 +1084,24 @@ def run_task10_case(test):
                 reply,
                 reasons,
                 pages,
-                alternatives
+                alternatives,
             )
         )
 
         source = "SAFE"
 
-    # --------------------------------------------------
-    # Compare expected results
-    # --------------------------------------------------
+    # --------------------------------------------------------
+    # Step 7 - compare expected result
+    # --------------------------------------------------------
 
-    reasons_pass = compare_lists(
-        reasons,
-        test["expected_reasons"]
+    reasons_pass = (
+        reasons
+        == test["expected_reasons"]
     )
 
-    pages_pass = compare_lists(
+    pages_pass = pages_cover_expected(
         pages,
-        test["expected_pages"]
+        test["expected_pages"],
     )
 
     overall = (
@@ -916,6 +1119,7 @@ def run_task10_case(test):
         "reasons_pass": reasons_pass,
         "pages": pages,
         "pages_pass": pages_pass,
+        "retrieved_chunks": search_results,
         "reply": reply,
         "reply_pass": reply_pass,
         "validation_message": validation_message,
@@ -925,34 +1129,39 @@ def run_task10_case(test):
     }
 
 
-# ==================================================
-# PAGE TITLE
-# ==================================================
+# ============================================================
+# STREAMLIT PAGE
+# ============================================================
 
-st.title("🎓 Course Enrolment Assistant")
+st.title(
+    "🎓 Course Enrolment Assistant"
+)
 
 st.write(
-    "AI-assisted course identification with "
-    "Python enrolment rules and handbook guidance."
+    "AI course identification → Python enrolment rules "
+    "→ BGE vector/RAG handbook retrieval → "
+    "validated final reply."
 )
 
 
-# ==================================================
+# ============================================================
 # 1. AI STUDENT ASSISTANT
-# ==================================================
+# ============================================================
 
-st.header("1. Ask the Course Enrolment Assistant")
+st.header(
+    "1. Ask the Course Enrolment Assistant"
+)
 
 st.write(
-    "Type a natural-language question. "
-    "The AI identifies the course, Python checks the "
-    "enrolment rules, and the handbook provides guidance."
+    "The AI identifies the course. Python checks the "
+    "rules. BGE embeddings retrieve relevant handbook "
+    "chunks. The reply model creates the final response."
 )
 
 student_question_id = st.text_input(
     "Student ID",
     placeholder="Example: S-102",
-    key="ai_student_id"
+    key="ai_student_id",
 )
 
 student_question = st.text_area(
@@ -961,12 +1170,12 @@ student_question = st.text_area(
         "Example: Trying to sign up for "
         "Machine Learning and it will not let me."
     ),
-    key="ai_question"
+    key="ai_question",
 )
 
 if st.button(
     "Ask Assistant",
-    type="primary"
+    type="primary",
 ):
 
     if not student_question_id.strip():
@@ -983,6 +1192,10 @@ if st.button(
 
     else:
 
+        # ----------------------------------------------------
+        # Step 1 - course
+        # ----------------------------------------------------
+
         with st.spinner(
             "AI is identifying the course..."
         ):
@@ -998,11 +1211,6 @@ if st.button(
                 "Please include the course name or course code."
             )
 
-            st.info(
-                "Real course codes: "
-                + ", ".join(COURSES.keys())
-            )
-
         else:
 
             st.success(
@@ -1010,6 +1218,10 @@ if st.button(
                 f"{course_code} - "
                 f"{COURSES[course_code]}"
             )
+
+            # ------------------------------------------------
+            # Step 2 - Python rules
+            # ------------------------------------------------
 
             with st.spinner(
                 "Checking enrolment rules..."
@@ -1026,7 +1238,7 @@ if st.button(
                 st.error(
                     data.get(
                         "error",
-                        "Unable to check enrolment."
+                        "Unable to check enrolment.",
                     )
                 )
 
@@ -1042,36 +1254,66 @@ if st.button(
                     []
                 )
 
-                pages = get_handbook_pages(
-                    reasons
-                )
+                # --------------------------------------------
+                # Step 3 - REAL RAG
+                # --------------------------------------------
 
-                handbook_content = (
-                    get_handbook_content(pages)
-                )
+                with st.spinner(
+                    "Searching the handbook with embeddings..."
+                ):
+
+                    (
+                        pages,
+                        handbook_text,
+                        search_results,
+                    ) = retrieve_handbook(
+                        question=student_question,
+                        reasons=reasons,
+                        k=5,
+                    )
+
+                # Fallback only if vector search is unavailable.
+                if not pages:
+
+                    pages = (
+                        get_handbook_pages_fallback(
+                            reasons
+                        )
+                    )
+
+                    fallback_content = (
+                        get_handbook_content(
+                            pages
+                        )
+                    )
+
+                    handbook_text = (
+                        "\n\n".join(
+                            f"--- {filename} ---\n{text}"
+                            for filename, text
+                            in fallback_content.items()
+                        )
+                    )
+
+                    st.warning(
+                        "Vector search was unavailable, "
+                        "so the handbook fallback was used."
+                    )
+
+                # --------------------------------------------
+                # Step 4 - alternatives
+                # --------------------------------------------
 
                 alternatives = []
-
-                # --------------------------------------------------
-                # Alternatives are only relevant for:
-                # 1. A course that is full
-                # 2. A missing prerequisite
-                #
-                # A timetable clash, unpaid fees, credit limit,
-                # or grade issue does not automatically trigger
-                # alternative-course suggestions.
-                # --------------------------------------------------
 
                 reason_text = " ".join(
                     reasons
                 ).lower()
 
-                needs_alternative = (
+                if (
                     "full" in reason_text
                     or "prerequisite" in reason_text
-                )
-
-                if needs_alternative:
+                ):
 
                     with st.spinner(
                         "Checking eligible alternatives..."
@@ -1080,9 +1322,13 @@ if st.button(
                         alternatives = (
                             get_eligible_alternatives(
                                 student_question_id.strip(),
-                                course_code
+                                course_code,
                             )
                         )
+
+                # --------------------------------------------
+                # Step 5 - final reply
+                # --------------------------------------------
 
                 with st.spinner(
                     "Preparing final reply..."
@@ -1091,11 +1337,48 @@ if st.button(
                     final_reply, source = (
                         generate_reply(
                             reasons=reasons,
-                            handbook_content=handbook_content,
+                            handbook_content=handbook_text,
                             pages=pages,
-                            alternatives=alternatives
+                            search_results=search_results,
+                            alternatives=alternatives,
                         )
                     )
+
+                # --------------------------------------------
+                # Step 6 - validate
+                # --------------------------------------------
+
+                reply_pass, validation_message = (
+                    validate_reply(
+                        final_reply,
+                        reasons,
+                        pages,
+                        alternatives,
+                    )
+                )
+
+                if not reply_pass:
+
+                    final_reply = make_safe_reply(
+                        reasons,
+                        pages,
+                        alternatives,
+                    )
+
+                    reply_pass, validation_message = (
+                        validate_reply(
+                            final_reply,
+                            reasons,
+                            pages,
+                            alternatives,
+                        )
+                    )
+
+                    source = "SAFE"
+
+                # --------------------------------------------
+                # DECISION
+                # --------------------------------------------
 
                 st.subheader(
                     "Python Rule Decision"
@@ -1104,7 +1387,7 @@ if st.button(
                 if result.get("allowed"):
 
                     st.success(
-                        "✅ Enrolment approved."
+                        "✅ No enrolment rule blocked the request."
                     )
 
                 else:
@@ -1113,11 +1396,55 @@ if st.button(
                         "❌ Enrolment blocked."
                     )
 
-                    if reasons:
+                    for reason in reasons:
 
-                        for reason in reasons:
+                        st.warning(
+                            reason
+                        )
 
-                            st.warning(reason)
+                # --------------------------------------------
+                # RAG RESULTS
+                # --------------------------------------------
+
+                st.subheader(
+                    "Retrieved Handbook Content"
+                )
+
+                if search_results:
+
+                    # Show only the highest-scoring RAG result in the UI.
+                    top_result = search_results[0]
+                    top_file = top_result.get("file", "Unknown")
+                    top_score = top_result.get("score", "N/A")
+                    top_text = top_result.get("text", "")
+
+                    st.write(
+                        f"**Top result: {top_file}** "
+                        f"(score: {top_score})"
+                    )
+
+                    import html
+
+                    safe_handbook_text = html.escape(
+                        str(top_text)
+                    ).replace("\n", "<br>")
+
+                    st.markdown(
+                        f'<div class="handbook-text">'
+                        f"{safe_handbook_text}"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                else:
+
+                    st.info(
+                        "No vector-search results were available."
+                    )
+
+                # --------------------------------------------
+                # HANDBOOK PAGES
+                # --------------------------------------------
 
                 st.subheader(
                     "Handbook Pages"
@@ -1129,6 +1456,10 @@ if st.button(
                         f"📖 `{page}`"
                     )
 
+                # --------------------------------------------
+                # ALTERNATIVES
+                # --------------------------------------------
+
                 if alternatives:
 
                     st.subheader(
@@ -1138,10 +1469,13 @@ if st.button(
                     for alternative in alternatives:
 
                         st.write(
-                            f"- "
-                            f"**{alternative['course_code']}** - "
+                            f"- **{alternative['course_code']}** - "
                             f"{alternative['title']}"
                         )
+
+                # --------------------------------------------
+                # FINAL REPLY
+                # --------------------------------------------
 
                 st.subheader(
                     "Final Reply"
@@ -1152,28 +1486,28 @@ if st.button(
                 )
 
                 st.caption(
-                    f"Reply source: {source}"
+                    f"Reply source: {source} | "
+                    f"Validation: "
+                    f"{'PASS' if reply_pass else 'FAIL'}"
                 )
 
 
-# ==================================================
-# 2. TASK 10 - RUN ALL SIX REQUESTS
-# ==================================================
+# ============================================================
+# 2. TASK 10
+# ============================================================
 
 st.header(
     "2. Task 10 - Run All Six Requests"
 )
 
 st.write(
-    "This runs the six supplied Task 10 requests, "
-    "records the reasons and handbook pages, "
-    "validates the final reply, and compares "
-    "everything with the expected answers."
+    "Runs all six requests and checks course identification, "
+    "Python reasons, RAG handbook retrieval, and final reply."
 )
 
 if st.button(
     "▶ Run All Six Task 10 Tests",
-    type="primary"
+    type="primary",
 ):
 
     results = []
@@ -1184,29 +1518,32 @@ if st.button(
 
     for index, test in enumerate(
         TASK10_REQUESTS,
-        start=1
+        start=1,
     ):
 
         result = run_task10_case(
             test
         )
 
-        results.append(result)
-
-        progress.progress(
-            index / len(TASK10_REQUESTS)
+        results.append(
+            result
         )
 
-    st.session_state["task10_results"] = (
-        results
-    )
+        progress.progress(
+            index / len(
+                TASK10_REQUESTS
+            )
+        )
+
+    st.session_state[
+        "task10_results"
+    ] = results
 
 
-# --------------------------------------------------
-# DISPLAY TASK 10 RESULTS
-# --------------------------------------------------
-
-if "task10_results" in st.session_state:
+if (
+    "task10_results"
+    in st.session_state
+):
 
     results = st.session_state[
         "task10_results"
@@ -1224,11 +1561,6 @@ if "task10_results" in st.session_state:
         )
 
         st.write(
-            f"**Student ID:** "
-            f"{result['student_id']}"
-        )
-
-        st.write(
             f"**Expected course:** "
             f"{result['expected_course']}"
         )
@@ -1239,8 +1571,7 @@ if "task10_results" in st.session_state:
         )
 
         if result.get(
-            "course_pass",
-            False
+            "course_pass"
         ):
 
             st.success(
@@ -1253,14 +1584,30 @@ if "task10_results" in st.session_state:
                 "Course identification: FAIL"
             )
 
-        # Reasons
         st.write(
-            "**Python reasons:**"
+            "**Expected reasons:**"
         )
 
-        if result.get("reasons"):
+        for reason in result.get(
+            "expected_reasons",
+            [],
+        ):
 
-            for reason in result["reasons"]:
+            st.write(
+                f"- {reason}"
+            )
+
+        st.write(
+            "**Actual Python reasons:**"
+        )
+
+        if result.get(
+            "reasons"
+        ):
+
+            for reason in result[
+                "reasons"
+            ]:
 
                 st.write(
                     f"- {reason}"
@@ -1269,30 +1616,43 @@ if "task10_results" in st.session_state:
         else:
 
             st.write(
-                "- No blocking reason"
+                "- None"
             )
 
-        # Expected pages
+        if result.get(
+            "reasons_pass"
+        ):
+
+            st.success(
+                "Reasons comparison: PASS"
+            )
+
+        else:
+
+            st.error(
+                "Reasons comparison: FAIL"
+            )
+
         st.write(
             "**Expected handbook pages:**"
         )
 
-        for page in result[
-            "expected_pages"
-        ]:
+        for page in result.get(
+            "expected_pages",
+            [],
+        ):
 
             st.write(
                 f"- `{page}`"
             )
 
-        # Retrieved pages
         st.write(
             "**Retrieved handbook pages:**"
         )
 
         for page in result.get(
             "pages",
-            []
+            [],
         ):
 
             st.write(
@@ -1300,36 +1660,50 @@ if "task10_results" in st.session_state:
             )
 
         if result.get(
-            "pages_pass",
-            False
+            "pages_pass"
         ):
 
             st.success(
-                "Handbook comparison: PASS"
+                "RAG handbook retrieval: PASS"
             )
 
         else:
 
             st.error(
-                "Handbook comparison: FAIL"
+                "RAG handbook retrieval: FAIL"
             )
 
-        # Reply
+        if result.get(
+            "retrieved_chunks"
+        ):
+
+            st.write(
+                "**Top vector-search results:**"
+            )
+
+            for item in result[
+                "retrieved_chunks"
+            ]:
+
+                st.caption(
+                    f"{item.get('file')} | "
+                    f"score={item.get('score')}"
+                )
+
         st.write(
-            "**AI / final reply:**"
+            "**Final reply:**"
         )
 
         st.code(
             result.get(
                 "reply",
-                ""
+                "",
             ),
-            language="text"
+            language="text",
         )
 
         if result.get(
-            "reply_pass",
-            False
+            "reply_pass"
         ):
 
             st.success(
@@ -1342,14 +1716,17 @@ if "task10_results" in st.session_state:
                 "Reply validation: FAIL"
             )
 
-        # Alternatives
+        st.write(
+            f"**Reply source:** "
+            f"{result.get('reply_source')}"
+        )
+
         if result.get(
             "alternatives"
         ):
 
             st.write(
-                "**Python-verified eligible "
-                "alternative(s):**"
+                "**Python-verified alternatives:**"
             )
 
             for alternative in result[
@@ -1363,8 +1740,7 @@ if "task10_results" in st.session_state:
                 )
 
         if result.get(
-            "overall",
-            False
+            "overall"
         ):
 
             st.success(
@@ -1379,10 +1755,6 @@ if "task10_results" in st.session_state:
 
         st.divider()
 
-    # ==================================================
-    # FINAL COMPARISON TABLE
-    # ==================================================
-
     st.subheader(
         "Task 10 Final Comparison"
     )
@@ -1395,10 +1767,12 @@ if "task10_results" in st.session_state:
             "; ".join(
                 result.get(
                     "reasons",
-                    []
+                    [],
                 )
             )
-            if result.get("reasons")
+            if result.get(
+                "reasons"
+            )
             else "None"
         )
 
@@ -1406,20 +1780,24 @@ if "task10_results" in st.session_state:
             ", ".join(
                 result.get(
                     "pages",
-                    []
+                    [],
                 )
             )
-            if result.get("pages")
+            if result.get(
+                "pages"
+            )
             else "None"
         )
 
         table_rows.append(
             {
-                "Test": result["id"],
-                "Expected": result[
+                "Test": result[
+                    "id"
+                ],
+                "Expected Course": result[
                     "expected_course"
                 ],
-                "Found": result.get(
+                "Found Course": result.get(
                     "found_course"
                 ),
                 "Reasons": reasons_text,
@@ -1441,40 +1819,35 @@ if "task10_results" in st.session_state:
     passed = sum(
         1
         for result in results
-        if result.get("overall")
+        if result.get(
+            "overall"
+        )
     )
 
     st.subheader(
         "Task 10 Summary"
     )
 
+    st.write(
+        f"Tests Passed: {passed}/6"
+    )
+
     if passed == 6:
 
         st.success(
-            "✅ Tests Passed: 6/6"
-        )
-
-        st.success(
-            "Task 10 completed successfully. "
-            "All six requests matched the expected "
-            "course, reasons, handbook pages, "
-            "and validated reply."
+            "✅ All six Task 10 requests passed."
         )
 
     else:
-
-        st.error(
-            f"Tests Passed: {passed}/6"
-        )
 
         st.warning(
             "Some Task 10 checks still need correction."
         )
 
 
-# ==================================================
+# ============================================================
 # 3. STUDENT LOOKUP
-# ==================================================
+# ============================================================
 
 st.header(
     "3. Student Lookup"
@@ -1483,7 +1856,7 @@ st.header(
 lookup_student = st.text_input(
     "Enter Student ID",
     placeholder="Example: S-102",
-    key="lookup_student"
+    key="lookup_student",
 )
 
 if st.button(
@@ -1503,7 +1876,8 @@ if st.button(
         ):
 
             status, data = api_get(
-                f"/students/{lookup_student.strip()}"
+                f"/students/"
+                f"{lookup_student.strip()}"
             )
 
         if status == 404:
@@ -1560,20 +1934,27 @@ if st.button(
                 f"{student.get('fees_status')}"
             )
 
-            enrolment_status, enrolment_data = (
-                api_get(
-                    f"/students/"
-                    f"{lookup_student.strip()}/"
-                    f"enrolments"
-                )
+            (
+                enrolment_status,
+                enrolment_data,
+            ) = api_get(
+                f"/students/"
+                f"{lookup_student.strip()}/"
+                f"enrolments"
             )
 
             if enrolment_status == 200:
 
                 enrolments = (
                     enrolment_data
-                    .get("data", {})
-                    .get("enrolments", [])
+                    .get(
+                        "data",
+                        {}
+                    )
+                    .get(
+                        "enrolments",
+                        []
+                    )
                 )
 
                 st.subheader(
@@ -1593,9 +1974,9 @@ if st.button(
                     )
 
 
-# ==================================================
+# ============================================================
 # 4. COURSE LIST
-# ==================================================
+# ============================================================
 
 st.header(
     "4. Course List"
@@ -1664,7 +2045,9 @@ if st.button(
                 "capacity"
             )
 
-            if course.get("full"):
+            if course.get(
+                "full"
+            ):
 
                 st.error(
                     f"🔴 FULL — "
@@ -1685,9 +2068,9 @@ if st.button(
                 )
 
 
-# ==================================================
+# ============================================================
 # 5. MANUAL ENROLMENT CHECK
-# ==================================================
+# ============================================================
 
 st.header(
     "5. Manual Enrolment Check"
@@ -1696,13 +2079,13 @@ st.header(
 manual_student = st.text_input(
     "Student ID",
     placeholder="Example: S-102",
-    key="manual_student"
+    key="manual_student",
 )
 
 manual_course = st.text_input(
     "Course Code",
     placeholder="Example: CS301",
-    key="manual_course"
+    key="manual_course",
 )
 
 if st.button(
@@ -1763,7 +2146,7 @@ if st.button(
             ):
 
                 st.success(
-                    "✅ Enrolment approved."
+                    "✅ No enrolment rule blocked this course."
                 )
 
             else:
@@ -1796,13 +2179,13 @@ if st.button(
                 )
 
 
-# ==================================================
+# ============================================================
 # FOOTER
-# ==================================================
+# ============================================================
 
 st.divider()
 
 st.caption(
     "Course Enrolment Assistant | "
-    "Python Rules + FastAPI + Handbook Search + AI"
+    "Python Rules + FastAPI + BGE Vector Search + RAG + AI"
 )

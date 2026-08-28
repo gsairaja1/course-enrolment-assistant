@@ -5,11 +5,10 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 
 
 # ============================================================
-# 1. PATHS
+# 1. PATHS AND MODEL
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
 HANDBOOK_DIR = BASE_DIR / "data" / "handbook"
 
 MODEL_NAME = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
@@ -20,27 +19,22 @@ MODEL_NAME = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
 # ============================================================
 
 print("Loading reply model...")
-print("Loading tokenizer...")
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
-print("Tokenizer loaded.")
-
-print("Loading model...")
-
-model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_NAME
+)
 
 print("Reply model loaded.")
 
 
 # ============================================================
-# 3. LOAD HANDBOOK
+# 3. HANDBOOK HELPERS
 # ============================================================
 
 def load_handbook(filename):
-    """
-    Load one handbook Markdown file.
-    """
+    """Load one handbook Markdown file."""
 
     path = HANDBOOK_DIR / filename
 
@@ -49,24 +43,22 @@ def load_handbook(filename):
             f"Handbook file not found: {filename}"
         )
 
-    with open(
-        path,
-        "r",
+    return path.read_text(
         encoding="utf-8"
-    ) as file:
-        return file.read()
+    )
 
 
 def build_handbook_text(handbook_files):
-    """
-    Combine all required handbook pages.
-    """
+    """Combine the supplied handbook pages into one text block."""
 
     parts = []
 
-    for filename in handbook_files:
+    for filename in handbook_files or []:
 
-        text = load_handbook(filename)
+        try:
+            text = load_handbook(filename)
+        except FileNotFoundError:
+            continue
 
         parts.append(
             f"--- {filename} ---\n{text}"
@@ -76,7 +68,7 @@ def build_handbook_text(handbook_files):
 
 
 # ============================================================
-# 4. EXTRACT NUMBERS AND COURSE CODES
+# 4. TEXT VALIDATION HELPERS
 # ============================================================
 
 def extract_numbers_and_codes(text):
@@ -94,15 +86,15 @@ def extract_numbers_and_codes(text):
     return numbers, course_codes
 
 
-# ============================================================
-# 5. CHECK REASONS
-# ============================================================
-
 def check_reasons(reply, reasons):
+    """
+    Every verified Python reason must appear exactly.
+    This prevents the AI from changing the facts.
+    """
 
     reply_lower = reply.lower()
 
-    for reason in reasons:
+    for reason in reasons or []:
 
         if reason.lower() not in reply_lower:
 
@@ -113,18 +105,11 @@ def check_reasons(reply, reasons):
     return True, ""
 
 
-# ============================================================
-# 6. CHECK HANDBOOK PAGES
-# ============================================================
-
-def check_handbook_pages(
-    reply,
-    handbook_files
-):
+def check_handbook_pages(reply, handbook_files):
 
     reply_lower = reply.lower()
 
-    for filename in handbook_files:
+    for filename in handbook_files or []:
 
         if filename.lower() not in reply_lower:
 
@@ -134,10 +119,6 @@ def check_handbook_pages(
 
     return True, ""
 
-
-# ============================================================
-# 7. CHECK NUMBERS AND COURSE CODES
-# ============================================================
 
 def check_numbers_and_codes(
     reply,
@@ -171,10 +152,6 @@ def check_numbers_and_codes(
     return True, ""
 
 
-# ============================================================
-# 8. WAIVER SAFETY
-# ============================================================
-
 def check_waiver_safety(reply):
 
     reply_lower = reply.lower()
@@ -191,12 +168,10 @@ def check_waiver_safety(reply):
         "named member of staff"
     ]
 
-    has_authority = any(
+    if not any(
         phrase in reply_lower
         for phrase in approval_phrases
-    )
-
-    if not has_authority:
+    ):
 
         return False, (
             "waiver mentioned without approval authority"
@@ -226,10 +201,6 @@ def check_waiver_safety(reply):
     return True, ""
 
 
-# ============================================================
-# 9. ALTERNATIVE COURSE CHECK
-# ============================================================
-
 def check_alternative(
     reply,
     alternatives
@@ -240,9 +211,9 @@ def check_alternative(
 
     reply_lower = reply.lower()
 
-    for course_code, title in alternatives:
+    for code, title in alternatives:
 
-        if course_code.lower() in reply_lower:
+        if code.lower() in reply_lower:
             return True, ""
 
         if title.lower() in reply_lower:
@@ -255,7 +226,9 @@ def check_alternative(
 
 def needs_alternative(reasons):
 
-    reason_text = " ".join(reasons).lower()
+    reason_text = " ".join(
+        reasons or []
+    ).lower()
 
     return (
         "full" in reason_text
@@ -264,35 +237,98 @@ def needs_alternative(reasons):
 
 
 # ============================================================
-# 10. BUILD PYTHON-VERIFIED ALTERNATIVE
+# 5. SAFE FALLBACK
 # ============================================================
 
-def build_alternative_text(alternatives):
+def fallback_reply(
+    reasons,
+    handbook_files,
+    alternatives
+):
+    """
+    Deterministic answer used when the local AI output
+    fails validation.
 
-    if not alternatives:
-        return ""
+    This is intentionally based only on verified Python data.
+    """
 
-    code, title = alternatives[0]
+    reasons = reasons or []
+    handbook_files = handbook_files or []
+    alternatives = alternatives or []
 
-    return (
-        f"\nVerified alternative: "
-        f"{code} - {title}."
-    )
+    if reasons:
+
+        reason_lines = "\n".join(
+            f"- {reason}"
+            for reason in reasons
+        )
+
+        reply = (
+            "You are not currently eligible to enrol "
+            "for the following reason(s):\n"
+            f"{reason_lines}"
+        )
+
+    else:
+
+        reply = (
+            "There are no blocking reasons for enrolment."
+        )
+
+    if handbook_files:
+
+        page_lines = "\n".join(
+            f"- {page}"
+            for page in handbook_files
+        )
+
+        reply += (
+            "\n\nRelevant handbook page(s):\n"
+            f"{page_lines}"
+        )
+
+    if (
+        reasons
+        and needs_alternative(reasons)
+        and alternatives
+    ):
+
+        code, title = alternatives[0]
+
+        reply += (
+            "\n\nYou could instead consider "
+            f"{code} - {title}."
+        )
+
+    if "waivers.md" in handbook_files:
+
+        reply += (
+            "\n\nA waiver may be possible. "
+            "The course leader decides whether "
+            "a waiver can be approved. "
+            "It does not automatically approve enrolment."
+        )
+
+    return reply
 
 
 # ============================================================
-# 11. CLEAN AI RESPONSE
+# 6. CLEAN AI RESPONSE
 # ============================================================
 
 def clean_ai_response(response):
 
-    response = response.strip()
+    response = (
+        response or ""
+    ).strip()
 
-    # Remove accidental quotation marks.
-    if response.startswith('"') and response.endswith('"'):
+    if (
+        response.startswith('"')
+        and response.endswith('"')
+    ):
+
         response = response[1:-1].strip()
 
-    # Remove accidental instruction leakage.
     bad_sections = [
         "IMPORTANT ARCHITECTURE:",
         "RULES:",
@@ -315,16 +351,27 @@ def clean_ai_response(response):
 
 
 # ============================================================
-# 12. ASK AI
+# 7. ASK AI
 # ============================================================
 
 def ask_ai(
     reasons,
     handbook_text,
     handbook_files,
-    alternatives,
-    retry=False
+    alternatives
 ):
+    """
+    Generate one AI response.
+
+    We deliberately do only ONE AI attempt.
+    If it fails validation, generate_reply() immediately
+    uses the safe deterministic response instead of making
+    another slow model call.
+    """
+
+    reasons = reasons or []
+    handbook_files = handbook_files or []
+    alternatives = alternatives or []
 
     reasons_text = "\n".join(
         f"- {reason}"
@@ -336,61 +383,53 @@ def ask_ai(
         for filename in handbook_files
     )
 
-    alternative_text = build_alternative_text(
-        alternatives
-    )
+    alternative_text = ""
+
+    if alternatives:
+
+        alternative_lines = [
+            f"- {code} - {title}"
+            for code, title in alternatives
+        ]
+
+        alternative_text = (
+            "\n".join(alternative_lines)
+        )
 
     system_message = """
 You are a student support assistant.
 
-Python has already decided whether enrolment is blocked.
+Python has already made the enrolment decision.
+Do NOT make a new decision.
 
-You must NOT make a new decision.
+Write only a short student-facing reply.
 
-Write only a short student-facing explanation.
-
-IMPORTANT:
-
-- Use the exact reason text supplied by Python.
-- Do not change the reason wording.
-- Mention every supplied handbook filename.
-- Explain briefly what the student should do next.
-- Do not invent facts.
-- Do not invent numbers.
-- Do not invent course codes.
-- If an alternative course is supplied, mention that exact alternative.
-- If a waiver is mentioned, say that the course leader decides or approves it.
-- Never say enrolment has been approved.
-- Never say the student is approved.
-- Keep the answer short.
-"""
-
-    if retry:
-
-        system_message += """
-The previous answer failed validation.
-
-Write a completely new answer.
-
-Make sure every Python reason appears exactly.
-Make sure every handbook filename appears exactly.
-Do not add any new numbers or course codes.
+STRICT RULES:
+- Copy every Python reason EXACTLY.
+- Do not paraphrase or shorten Python reasons.
+- Mention every supplied handbook filename EXACTLY.
+- Use the handbook content only as supporting guidance.
+- Do not invent facts, numbers, dates, or course codes.
+- If an alternative is supplied, mention the exact alternative.
+- If waivers.md is supplied, explain that the course leader decides whether a waiver is approved.
+- Never say enrolment is approved.
+- Keep the reply concise.
 """
 
     user_message = (
-        "PYTHON REASONS:\n"
+        "PYTHON VERIFIED REASONS:\n"
         f"{reasons_text if reasons_text else 'No blocking reason.'}"
         "\n\n"
-        "HANDBOOK PAGES:\n"
-        f"{pages_text}"
+        "HANDBOOK FILES:\n"
+        f"{pages_text if pages_text else 'None'}"
         "\n\n"
-        "HANDBOOK CONTENT:\n"
-        f"{handbook_text}"
+        "RETRIEVED HANDBOOK CONTENT:\n"
+        f"{handbook_text if handbook_text else 'None'}"
         "\n\n"
-        "PYTHON-VERIFIED ALTERNATIVE:"
-        f"{alternative_text}"
+        "PYTHON VERIFIED ALTERNATIVES:\n"
+        f"{alternative_text if alternative_text else 'None'}"
         "\n\n"
-        "Write only the student-facing reply."
+        "Write only the final student-facing reply."
     )
 
     messages = [
@@ -442,7 +481,7 @@ Do not add any new numbers or course codes.
 
 
 # ============================================================
-# 13. VALIDATE RESPONSE
+# 8. VALIDATE FINAL REPLY
 # ============================================================
 
 def validate_reply(
@@ -453,10 +492,6 @@ def validate_reply(
     alternatives
 ):
 
-    # --------------------------------------------------------
-    # CHECK 1 - EVERY REASON
-    # --------------------------------------------------------
-
     valid, error = check_reasons(
         reply,
         reasons
@@ -464,11 +499,6 @@ def validate_reply(
 
     if not valid:
         return False, error
-
-
-    # --------------------------------------------------------
-    # CHECK 2 - EVERY HANDBOOK PAGE
-    # --------------------------------------------------------
 
     valid, error = check_handbook_pages(
         reply,
@@ -478,18 +508,13 @@ def validate_reply(
     if not valid:
         return False, error
 
-
-    # --------------------------------------------------------
-    # CHECK 3 - NUMBERS AND COURSE CODES
-    # --------------------------------------------------------
-
     allowed_text = (
-        "\n".join(reasons)
+        "\n".join(reasons or [])
         + "\n"
-        + handbook_text
+        + (handbook_text or "")
     )
 
-    for code, title in alternatives:
+    for code, title in alternatives or []:
 
         allowed_text += (
             f"\n{code}\n{title}"
@@ -503,22 +528,12 @@ def validate_reply(
     if not valid:
         return False, error
 
-
-    # --------------------------------------------------------
-    # CHECK 4 - WAIVER
-    # --------------------------------------------------------
-
     valid, error = check_waiver_safety(
         reply
     )
 
     if not valid:
         return False, error
-
-
-    # --------------------------------------------------------
-    # CHECK 5 - ALTERNATIVE
-    # --------------------------------------------------------
 
     if needs_alternative(reasons):
 
@@ -532,138 +547,79 @@ def validate_reply(
             if not valid:
                 return False, error
 
-
     return True, ""
 
 
 # ============================================================
-# 14. DETERMINISTIC SAFE FALLBACK
-# ============================================================
-
-def fallback_reply(
-    reasons,
-    handbook_files,
-    alternatives
-):
-    """
-    Safe deterministic fallback.
-
-    This response does not depend on the AI.
-    It uses only facts supplied by Python.
-    """
-
-    # --------------------------------------------------------
-    # REASONS
-    # --------------------------------------------------------
-
-    if reasons:
-
-        reason_lines = "\n".join(
-            f"- {reason}"
-            for reason in reasons
-        )
-
-    else:
-
-        reason_lines = "No blocking reason."
-
-
-    # --------------------------------------------------------
-    # HANDBOOK PAGES
-    # --------------------------------------------------------
-
-    page_lines = "\n".join(
-        f"- {page}"
-        for page in handbook_files
-    )
-
-
-    # --------------------------------------------------------
-    # START RESPONSE
-    # --------------------------------------------------------
-
-    if reasons:
-
-        reply = (
-            "The following issues prevent enrolment:\n"
-            f"{reason_lines}\n\n"
-            "Relevant handbook page(s):\n"
-            f"{page_lines}"
-        )
-
-    else:
-
-        reply = (
-            "There are no blocking reasons for enrolment.\n\n"
-            "Relevant handbook page(s):\n"
-            f"{page_lines}"
-        )
-
-
-    # --------------------------------------------------------
-    # VERIFIED ALTERNATIVE
-    # --------------------------------------------------------
-
-    if (
-        reasons
-        and needs_alternative(reasons)
-        and alternatives
-    ):
-
-        code, title = alternatives[0]
-
-        reply += (
-            "\n\n"
-            "You could instead consider the "
-            f"eligible course {code} - {title}."
-        )
-
-
-    # --------------------------------------------------------
-    # WAIVER SAFETY
-    # --------------------------------------------------------
-
-    if "waivers.md" in handbook_files:
-
-        reply += (
-            "\n\n"
-            "You may ask for a waiver. "
-            "The course leader decides whether "
-            "a waiver can be approved. "
-            "Enrolment is not approved automatically."
-        )
-
-
-    return reply
-
-# ============================================================
-# 15. GENERATE FINAL REPLY
+# 9. MAIN GENERATE FUNCTION
 # ============================================================
 
 def generate_reply(
     reasons,
-    handbook_files,
-    alternatives
+    handbook=None,
+    pages=None,
+    alternatives=None,
+    handbook_content=None,
+    handbook_files=None
 ):
+    """
+    Generate and validate the final reply.
 
-    handbook_text = build_handbook_text(
-        handbook_files
-    )
+    Compatible with both:
+        handbook=...
+        pages=...
 
+    and:
+        handbook_content=...
+        handbook_files=...
 
-    # ========================================================
-    # FIRST AI ATTEMPT
-    # ========================================================
+    Returns:
+        (reply, source)
+
+    source is either:
+        "AI"
+        "SAFE"
+    """
+
+    # Correct alias handling.
+    if handbook is None:
+        handbook = handbook_content
+
+    if pages is None:
+        pages = handbook_files
+
+    reasons = reasons or []
+    pages = pages or []
+    alternatives = alternatives or []
+
+    # Use retrieved RAG content when app.py supplies it.
+    # Only load local handbook files if no content was supplied.
+    if handbook is None:
+
+        handbook_text = build_handbook_text(
+            pages
+        )
+
+    elif isinstance(handbook, dict):
+
+        # search.py returns a dictionary by filename.
+        handbook_text = "\n\n".join(
+            f"--- {filename} ---\n{text}"
+            for filename, text in handbook.items()
+        )
+
+    else:
+
+        handbook_text = str(handbook)
 
     print()
-    print("FIRST AI ATTEMPT")
+    print("AI ATTEMPT")
 
     reply = ask_ai(
         reasons=reasons,
         handbook_text=handbook_text,
-        handbook_files=handbook_files,
-        alternatives=alternatives,
-        retry=False
+        handbook_files=pages,
+        alternatives=alternatives
     )
 
     print()
@@ -673,7 +629,7 @@ def generate_reply(
     valid, error = validate_reply(
         reply=reply,
         reasons=reasons,
-        handbook_files=handbook_files,
+        handbook_files=pages,
         handbook_text=handbook_text,
         alternatives=alternatives
     )
@@ -681,116 +637,61 @@ def generate_reply(
     if valid:
 
         print()
-        print("FIRST RESPONSE PASSED VALIDATION.")
+        print("AI RESPONSE PASSED VALIDATION.")
 
-        return reply, True
+        return reply, "AI"
 
-
-    # ========================================================
-    # RETRY
-    # ========================================================
-
+    # No second expensive generation.
+    # Use the deterministic safe answer immediately.
     print()
     print(
-        f"Validation failed: {error}"
+        f"AI RESPONSE FAILED VALIDATION: {error}"
     )
 
-    print()
-    print("FIRST RESPONSE FAILED.")
-    print("Trying one rewrite...")
-
-    reply = ask_ai(
-        reasons=reasons,
-        handbook_text=handbook_text,
-        handbook_files=handbook_files,
-        alternatives=alternatives,
-        retry=True
-    )
-
-    print()
-    print("AI RETRY RESPONSE:")
-    print(reply)
-
-    valid, error = validate_reply(
-        reply=reply,
-        reasons=reasons,
-        handbook_files=handbook_files,
-        handbook_text=handbook_text,
-        alternatives=alternatives
-    )
-
-    if valid:
-
-        print()
-        print("SECOND RESPONSE PASSED VALIDATION.")
-
-        return reply, True
-
-
-    # ========================================================
-    # SAFE FALLBACK
-    # ========================================================
-
-    print()
     print(
-        f"SECOND RESPONSE FAILED: {error}"
+        "Using safe verified response."
     )
 
-    print()
-    print("Showing safe fallback.")
-
-    return (
-        fallback_reply(
-            reasons,
-            handbook_files,
-            alternatives
-        ),
-        False
+    safe_reply = fallback_reply(
+        reasons,
+        pages,
+        alternatives
     )
+
+    return safe_reply, "SAFE"
 
 
 # ============================================================
-# 16. TASK 9 TEST CASES
+# 10. TASK 9 TEST CASES
 # ============================================================
 
 TESTS = {
 
     "R1": {
-
         "student_id": "S-104",
-
         "course": "CS201",
-
         "reasons": [
             "CS101 prerequisite not completed"
         ],
-
         "handbook": [
             "prerequisites.md",
             "advice.md"
         ],
-
         "alternatives": [
             ("MA150", "Statistics")
         ]
     },
 
-
     "R2": {
-
         "student_id": "S-101",
-
         "course": "CS310",
-
         "reasons": [
             "course is full, 25 of 25"
         ],
-
         "handbook": [
             "capacity.md",
             "advice.md"
         ],
-
         "alternatives": [
             ("CS101", "Programming Foundations"),
             ("CS201", "Algorithms"),
@@ -799,61 +700,43 @@ TESTS = {
         ]
     },
 
-
     "R3": {
-
         "student_id": "S-103",
-
         "course": "CS202",
-
         "reasons": [
             "clashes with MA150 Wed 14:00"
         ],
-
         "handbook": [
             "timetable.md"
         ],
-
         "alternatives": []
     },
 
-
     "R4": {
-
         "student_id": "S-102",
-
         "course": "CS301",
-
         "reasons": [
             "fees are unpaid",
             "would be 65 credits, limit 60"
         ],
-
         "handbook": [
             "fees.md",
             "credit_limit.md"
         ],
-
         "alternatives": []
     },
 
-
     "R5": {
-
         "student_id": "S-105",
-
         "course": "CS301",
-
         "reasons": [
             "CS201 grade 48, needs 55"
         ],
-
         "handbook": [
             "prerequisites.md",
             "advice.md",
             "waivers.md"
         ],
-
         "alternatives": [
             ("CS101", "Programming Foundations"),
             ("CS201", "Algorithms"),
@@ -863,26 +746,20 @@ TESTS = {
         ]
     },
 
-
     "R6": {
-
         "student_id": "S-106",
-
         "course": "DS220",
-
         "reasons": [],
-
         "handbook": [
             "advice.md"
         ],
-
         "alternatives": []
     }
 }
 
 
 # ============================================================
-# 17. MAIN TASK 9 TEST
+# 11. TASK 9 TEST
 # ============================================================
 
 if __name__ == "__main__":
@@ -893,7 +770,7 @@ if __name__ == "__main__":
     print("=" * 70)
 
     passed = 0
-    fallback_count = 0
+    safe_count = 0
 
     for test_id, test in TESTS.items():
 
@@ -916,54 +793,22 @@ if __name__ == "__main__":
         if test["reasons"]:
 
             for reason in test["reasons"]:
-
-                print(
-                    f"- {reason}"
-                )
+                print(f"- {reason}")
 
         else:
-
             print("- None")
 
         print()
         print("Handbook pages:")
 
         for page in test["handbook"]:
+            print(f"- {page}")
 
-            print(
-                f"- {page}"
-            )
-
-        if test["alternatives"]:
-
-            print()
-            print(
-                "Python-verified eligible alternatives:"
-            )
-
-            for code, title in test["alternatives"]:
-
-                print(
-                    f"- {code} - {title}"
-                )
-
-        final_reply, ai_passed = generate_reply(
+        final_reply, source = generate_reply(
             reasons=test["reasons"],
             handbook_files=test["handbook"],
             alternatives=test["alternatives"]
         )
-
-        print()
-        print("=" * 70)
-        print(f"FINAL REPLY - {test_id}")
-        print("=" * 70)
-
-        print(final_reply)
-
-        # ----------------------------------------------------
-        # IMPORTANT:
-        # The final reply is validated one more time.
-        # ----------------------------------------------------
 
         handbook_text = build_handbook_text(
             test["handbook"]
@@ -977,37 +822,26 @@ if __name__ == "__main__":
             alternatives=test["alternatives"]
         )
 
+        print()
+        print("FINAL REPLY:")
+        print(final_reply)
+
+        print()
+        print(f"SOURCE: {source}")
+
         if final_valid:
 
             passed += 1
-
-            print()
             print("FINAL VALIDATION: PASS")
 
         else:
 
-            fallback_count += 1
-
-            print()
             print(
-                f"FINAL VALIDATION FAILED: {final_error}"
+                f"FINAL VALIDATION: FAIL - {final_error}"
             )
 
-            # Absolute final safety net.
-            final_reply = fallback_reply(
-                test["reasons"],
-                test["handbook"],
-                test["alternatives"]
-            )
-
-            print()
-            print("FINAL SAFE REPLY:")
-            print(final_reply)
-
-
-    # ========================================================
-    # FINAL SUMMARY
-    # ========================================================
+        if source == "SAFE":
+            safe_count += 1
 
     print()
     print("=" * 70)
@@ -1019,22 +853,7 @@ if __name__ == "__main__":
     )
 
     print(
-        f"Fallbacks used: {fallback_count}/6"
+        f"Safe fallbacks used: {safe_count}/6"
     )
-
-    print("=" * 70)
-
-    if passed == 6:
-
-        print(
-            "TASK 9: ALL SIX REPLIES PASSED."
-        )
-
-    else:
-
-        print(
-            "TASK 9: SAFE FALLBACKS WERE USED "
-            "WHERE AI OUTPUT FAILED."
-        )
 
     print("=" * 70)
