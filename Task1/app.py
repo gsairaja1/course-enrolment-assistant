@@ -15,7 +15,7 @@ except Exception:
     ai_identify_course = None
 
 try:
-    from reply import generate_reply as ai_generate_reply
+    from reply import generate_reply as ai_generate_reply 
 except Exception:
     ai_generate_reply = None
 
