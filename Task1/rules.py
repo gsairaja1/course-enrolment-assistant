@@ -108,11 +108,15 @@ def prerequisite_block(student_id, course):
 # 3. CAPACITY RULE
 # --------------------------------------------------
 
+# --------------------------------------------------
+# 3. CAPACITY RULE
+# --------------------------------------------------
+
 def capacity_block(course):
     """
     Check whether the requested course is full.
 
-    Returns 'full, X of Y' if full.
+    Returns 'course is full, X of Y' if full.
     Otherwise returns None.
     """
 
@@ -134,7 +138,7 @@ def capacity_block(course):
 
         if row["enrolled_now"] >= row["capacity"]:
             return (
-                f"full, {row['enrolled_now']} "
+                f"course is full, {row['enrolled_now']} "
                 f"of {row['capacity']}"
             )
 

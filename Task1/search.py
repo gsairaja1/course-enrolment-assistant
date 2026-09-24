@@ -108,10 +108,10 @@ def search(question, k=3):
 
         return []
 
-    question_vector = model.encode(
-        [question],
-        normalize_embeddings=True
-    )[0]
+   question_vector = model.encode(
+    [f"Represent this sentence for searching relevant passages: {question}"],
+    normalize_embeddings=True
+)[0]
 
     # Because both vectors are normalized,
     # dot product = cosine similarity.
