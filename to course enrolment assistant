@@ -1,0 +1,2270 @@
+warning: in the working copy of 'data/requests/R1.json', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/Task1/ai.py b/Task1/ai.py[m
+[1mindex b8e7d34..dc9796f 100644[m
+[1m--- a/Task1/ai.py[m
+[1m+++ b/Task1/ai.py[m
+[36m@@ -2,171 +2,165 @@[m [mfrom pathlib import Path[m
+ import json[m
+ import re[m
+ [m
+[31m-from sentence_transformers import SentenceTransformer[m
+[32m+[m[32mfrom transformers import AutoTokenizer, AutoModelForCausalLM[m
+ [m
+ [m
+ # ============================================================[m
+[31m-# TASK 8 - AI COURSE IDENTIFICATION[m
+[31m-# ============================================================[m
+[31m-#[m
+[31m-# Purpose:[m
+[31m-# Convert a student's natural-language message into[m
+[31m-# one valid course code.[m
+[31m-#[m
+[31m-# Python provides:[m
+[31m-#   1. Student message[m
+[31m-#   2. Seven real course codes and titles[m
+[31m-#[m
+[31m-# AI provides:[m
+[31m-#   course_code only[m
+[31m-#[m
+[31m-# Python then validates the AI result.[m
+[31m-#[m
+[31m-# ============================================================[m
+[31m-[m
+[31m-[m
+[31m-# ------------------------------------------------------------[m
+ # 1. PROJECT PATH[m
+[31m-# ------------------------------------------------------------[m
+[32m+[m[32m# ============================================================[m
+ [m
+ BASE_DIR = Path(__file__).resolve().parent.parent[m
+ [m
+[31m-DATA_DIR = BASE_DIR / "data"[m
+[31m-COURSES_FILE = DATA_DIR / "courses.csv"[m
+[31m-[m
+[31m-[m
+[31m-# ------------------------------------------------------------[m
+[31m-# 2. REAL COURSE LIST[m
+[31m-# ------------------------------------------------------------[m
+[31m-[m
+[31m-REAL_COURSES = [[m
+[31m-    {[m
+[31m-        "course_code": "CS101",[m
+[31m-        "title": "Programming Foundations"[m
+[31m-    },[m
+[31m-    {[m
+[31m-        "course_code": "CS201",[m
+[31m-        "title": "Algorithms"[m
+[31m-    },[m
+[31m-    {[m
+[31m-        "course_code": "CS202",[m
+[31m-        "title": "Databases"[m
+[31m-    },[m
+[31m-    {[m
+[31m-        "course_code": "CS301",[m
+[31m-        "title": "Machine Learning"[m
+[31m-    },[m
+[31m-    {[m
+[31m-        "course_code": "CS310",[m
+[31m-        "title": "Distributed Systems"[m
+[31m-    },[m
+[31m-    {[m
+[31m-        "course_code": "DS220",[m
+[31m-        "title": "Data Visualisation"[m
+[31m-    },[m
+[31m-    {[m
+[31m-        "course_code": "MA150",[m
+[31m-        "title": "Statistics"[m
+[31m-    }[m
+[31m-][m
+ [m
+[32m+[m[32m# ============================================================[m
+[32m+[m[32m# 2. GENERATIVE LLM[m
+[32m+[m[32m# ============================================================[m
+ [m
+[31m-REAL_COURSE_CODES = {[m
+[31m-    course["course_code"][m
+[31m-    for course in REAL_COURSES[m
+[31m-}[m
+[32m+[m[32mMODEL_NAME = "HuggingFaceTB/SmolLM2-1.7B-Instruct"[m
+ [m
+[32m+[m[32mprint("Loading course identification LLM...")[m
+ [m
+[31m-# ------------------------------------------------------------[m
+[31m-# 3. LOAD AI MODEL ONCE[m
+[31m-# ------------------------------------------------------------[m
+[32m+[m[32mtokenizer = AutoTokenizer.from_pretrained([m
+[32m+[m[32m    MODEL_NAME[m
+[32m+[m[32m)[m
+ [m
+[31m-print("Loading AI model...")[m
+[32m+[m[32mmodel = AutoModelForCausalLM.from_pretrained([m
+[32m+[m[32m    MODEL_NAME[m
+[32m+[m[32m)[m
+ [m
+[32m+[m[32mprint("Course identification LLM loaded.")[m
+ [m
+[31m-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"[m
+ [m
+[32m+[m[32m# ============================================================[m
+[32m+[m[32m# 3. REAL COURSE DATA[m
+[32m+[m[32m# ============================================================[m
+ [m
+[31m-try:[m
+[32m+[m[32mREAL_COURSES = {[m
+[32m+[m[32m    "CS101": "Programming Foundations",[m
+[32m+[m[32m    "CS201": "Algorithms",[m
+[32m+[m[32m    "CS202": "Databases",[m
+[32m+[m[32m    "CS301": "Machine Learning",[m
+[32m+[m[32m    "CS310": "Distributed Systems",[m
+[32m+[m[32m    "DS220": "Data Visualisation",[m
+[32m+[m[32m    "MA150": "Statistics",[m
+[32m+[m[32m}[m
+ [m
+[31m-    model = SentenceTransformer(MODEL_NAME)[m
+[32m+[m[32mREAL_COURSE_CODES = set([m
+[32m+[m[32m    REAL_COURSES.keys()[m
+[32m+[m[32m)[m
+ [m
+[31m-except Exception as error:[m
+ [m
+[31m-    print("ERROR: Could not load the AI model.")[m
+[31m-    print(error)[m
+[31m-    raise[m
+[32m+[m[32m# ============================================================[m
+[32m+[m[32m# 4. COURSE ALIASES[m
+[32m+[m[32m# ============================================================[m
+ [m
+[32m+[m[32mCOURSE_ALIASES = {[m
+ [m
+[31m-print("AI model loaded.")[m
+[32m+[m[32m    # Machine Learning[m
+[32m+[m[32m    "ml": "CS301",[m
+[32m+[m[32m    "machine learning": "CS301",[m
+ [m
+[32m+[m[32m    # Algorithms[m
+[32m+[m[32m    "algorithms": "CS201",[m
+[32m+[m[32m    "algorithm": "CS201",[m
+ [m
+[31m-# ------------------------------------------------------------[m
+[31m-# 4. COURSE LIST FOR THE AI[m
+[31m-# ------------------------------------------------------------[m
+[32m+[m[32m    # Databases[m
+[32m+[m[32m    "databases": "CS202",[m
+[32m+[m[32m    "database": "CS202",[m
+ [m
+[31m-def build_course_list():[m
+[31m-    """[m
+[31m-    Create the course list that is supplied to the AI.[m
+[31m-    """[m
+[32m+[m[32m    # Distributed Systems[m
+[32m+[m[32m    "distributed systems": "CS310",[m
+[32m+[m[32m    "distributed system": "CS310",[m
+ [m
+[31m-    lines = [][m
+[32m+[m[32m    # Data Visualisation[m
+[32m+[m[32m    "data visualisation": "DS220",[m
+[32m+[m[32m    "data visualization": "DS220",[m
+ [m
+[31m-    for course in REAL_COURSES:[m
+[32m+[m[32m    # Programming Foundations[m
+[32m+[m[32m    "programming foundations": "CS101",[m
+ [m
+[31m-        lines.append([m
+[31m-            f"{course['course_code']} - {course['title']}"[m
+[31m-        )[m
+[32m+[m[32m    # Statistics[m
+[32m+[m[32m    "statistics": "MA150",[m
+[32m+[m[32m}[m
+ [m
+[31m-    return "\n".join(lines)[m
+ [m
+[32m+[m[32m# ============================================================[m
+[32m+[m[32m# 5. DIRECT COURSE MATCH[m
+[32m+[m[32m# ============================================================[m
+ [m
+[31m-COURSE_LIST = build_course_list()[m
+[32m+[m[32mdef direct_course_match(message):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Try to find a course directly from the student's message.[m
+ [m
+[32m+[m[32m    Checks:[m
+[32m+[m[32m    1. Course code[m
+[32m+[m[32m    2. Exact course title[m
+[32m+[m[32m    3. Alias[m
+[32m+[m[32m    """[m
+ [m
+[31m-# ------------------------------------------------------------[m
+[31m-# 5. SIMPLE TITLE MATCH[m
+[31m-# ------------------------------------------------------------[m
+[32m+[m[32m    text = message.lower().strip()[m
+ [m
+[31m-def dictionary_course_match(message):[m
+[31m-    """[m
+[31m-    Try to identify a course directly from its title.[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m[32m    # 5.1 CHECK COURSE CODE[m
+[32m+[m[32m    # --------------------------------------------------------[m
+ [m
+[31m-    This is not the main AI method.[m
+[31m-    It simply handles obvious cases safely.[m
+[31m-    """[m
+[32m+[m[32m    for code in REAL_COURSE_CODES:[m
+ [m
+[31m-    message_lower = message.lower()[m
+[32m+[m[32m        if re.search([m
+[32m+[m[32m            rf"\b{re.escape(code.lower())}\b",[m
+[32m+[m[32m            text[m
+[32m+[m[32m        ):[m
+[32m+[m[32m            return code[m
+ [m
+[31m-    matches = [][m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m[32m    # 5.2 CHECK FULL COURSE TITLE[m
+[32m+[m[32m    # --------------------------------------------------------[m
+ [m
+[31m-    for course in REAL_COURSES:[m
+[32m+[m[32m    for code, title in REAL_COURSES.items():[m
+ [m
+[31m-        title = course["title"].lower()[m
+[32m+[m[32m        if title.lower() in text:[m
+[32m+[m[32m            return code[m
+ [m
+[31m-        if title in message_lower:[m
+[31m-            matches.append(course["course_code"])[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m[32m    # 5.3 CHECK COURSE ALIAS[m
+[32m+[m[32m    # --------------------------------------------------------[m
+ [m
+[31m-    if len(matches) == 1:[m
+[32m+[m[32m    for alias in sorted([m
+[32m+[m[32m        COURSE_ALIASES,[m
+[32m+[m[32m        key=len,[m
+[32m+[m[32m        reverse=True[m
+[32m+[m[32m    ):[m
+ [m
+[31m-        return matches[0][m
+[32m+[m[32m        if re.search([m
+[32m+[m[32m            rf"\b{re.escape(alias)}\b",[m
+[32m+[m[32m            text[m
+[32m+[m[32m        ):[m
+[32m+[m[32m            return COURSE_ALIASES[alias][m
+ [m
+[32m+[m[32m    # Nothing found[m
+     return None[m
+ [m
+ [m
+[31m-# ------------------------------------------------------------[m
+[31m-# 6. AI COURSE IDENTIFICATION[m
+[31m-# ------------------------------------------------------------[m
+[32m+[m[32m# ============================================================[m
+[32m+[m[32m# 6. CREATE COURSE LIST FOR THE LLM[m
+[32m+[m[32m# ============================================================[m
+[32m+[m
+[32m+[m[32mCOURSE_LIST = "\n".join([m
+[32m+[m[32m    f"{code} - {title}"[m
+[32m+[m[32m    for code, title in REAL_COURSES.items()[m
+[32m+[m[32m)[m
+[32m+[m
+ [m
+[31m-def ask_ai_for_course(message):[m
+[31m-    """[m
+[31m-    Ask the AI to identify the course.[m
+[32m+[m[32m# ============================================================[m
+[32m+[m[32m# 7. ASK THE LLM TO IDENTIFY THE COURSE[m
+[32m+[m[32m# ============================================================[m
+ [m
+[31m-    The AI receives:[m
+[31m-        - student's message[m
+[31m-        - seven real course codes and titles[m
+[32m+[m[32mdef ask_llm_for_course(message):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Ask SmolLM2 to identify the course.[m
+ [m
+[31m-    It must return JSON only.[m
+[32m+[m[32m    The model is allowed to return null when[m
+[32m+[m[32m    the course cannot be identified confidently.[m
+     """[m
+ [m
+     prompt = f"""[m
+[36m@@ -175,61 +169,118 @@[m [mYou are a course identification assistant.[m
+ Your ONLY job is to identify which course the student[m
+ is asking about.[m
+ [m
+[32m+[m[32mDo NOT answer the student's question.[m
+[32m+[m[32mDo NOT explain.[m
+[32m+[m[32mDo NOT make an enrolment decision.[m
+[32m+[m
+ Student message:[m
+ {message}[m
+ [m
+[31m-These are the ONLY valid courses:[m
+[31m-[m
+[32m+[m[32mValid courses:[m
+ {COURSE_LIST}[m
+ [m
+[31m-Return JSON and nothing else.[m
+[32m+[m[32mRules:[m
+ [m
+[31m-Required format:[m
+[31m-{{"course_code": "CS301"}}[m
+[32m+[m[32m1. Choose ONLY from the valid courses listed above.[m
+[32m+[m[32m2. Understand indirect descriptions of courses.[m
+[32m+[m[32m3. If the student clearly describes a course, return its course code.[m
+[32m+[m[32m4. If the student does not clearly identify a course,[m
+[32m+[m[32m   return null.[m
+[32m+[m[32m5. Do NOT guess.[m
+[32m+[m[32m6. Do NOT invent a course code.[m
+[32m+[m[32m7. Return JSON only.[m
+ [m
+[31m-The course_code MUST be one of the seven valid course codes.[m
+[31m-Do not invent a course code.[m
+[31m-Do not explain your answer.[m
+[31m-Do not add any text outside the JSON.[m
+[31m-""".strip()[m
+[32m+[m[32mExamples:[m
+ [m
+[32m+[m[32m"Can I take ML?"[m
+[32m+[m[32m-> {{"course_code": "CS301"}}[m
+ [m
+[31m-    try:[m
+[32m+[m[32m"I want to learn predictive models"[m
+[32m+[m[32m-> {{"course_code": "CS301"}}[m
+ [m
+[31m-        # SentenceTransformer is primarily an embedding model,[m
+[31m-        # so it does not generate text responses.[m
+[31m-        #[m
+[31m-        # For Task 8 we therefore use the local title matching[m
+[31m-        # first, and this function safely returns None if a[m
+[31m-        # generative response is unavailable.[m
+[32m+[m[32m"I want to learn how databases store information"[m
+[32m+[m[32m-> {{"course_code": "CS202"}}[m
+ [m
+[31m-        return None[m
+[32m+[m[32m"I want to study algorithms"[m
+[32m+[m[32m-> {{"course_code": "CS201"}}[m
+ [m
+[31m-    except Exception as error:[m
+[32m+[m[32m"I want to learn basic programming"[m
+[32m+[m[32m-> {{"course_code": "CS101"}}[m
+ [m
+[31m-        print(f"AI request failed: {error}")[m
+[32m+[m[32m"I want to understand systems running across multiple computers"[m
+[32m+[m[32m-> {{"course_code": "CS310"}}[m
+ [m
+[31m-        return None[m
+[32m+[m[32m"I want to create charts and understand data visually"[m
+[32m+[m[32m-> {{"course_code": "DS220"}}[m
+ [m
+[32m+[m[32m"I want to study probability and statistics"[m
+[32m+[m[32m-> {{"course_code": "MA150"}}[m
+ [m
+[31m-# ------------------------------------------------------------[m
+[31m-# 7. EXTRACT JSON[m
+[31m-# ------------------------------------------------------------[m
+[32m+[m[32m"Tell me something interesting"[m
+[32m+[m[32m-> {{"course_code": null}}[m
+ [m
+[31m-def extract_json(text):[m
+[31m-    """[m
+[31m-    Extract JSON from the first '{' to the last '}'.[m
+[32m+[m[32m"What courses are available?"[m
+[32m+[m[32m-> {{"course_code": null}}[m
+[32m+[m
+[32m+[m[32m"I need help with my enrolment"[m
+[32m+[m[32m-> {{"course_code": null}}[m
+ [m
+[31m-    Example:[m
+[32m+[m[32mReturn exactly this format:[m
+ [m
+[31m-        Some text[m
+[31m-        {"course_code": "CS301"}[m
+[31m-        More text[m
+[32m+[m[32m{{"course_code": "CS301"}}[m
+ [m
+[31m-    becomes:[m
+[32m+[m[32mOR[m
+ [m
+[31m-        {"course_code": "CS301"}[m
+[31m-    """[m
+[32m+[m[32m{{"course_code": null}}[m
+[32m+[m[32m""".strip()[m
+[32m+[m
+[32m+[m[32m    messages = [[m
+[32m+[m[32m        {[m
+[32m+[m[32m            "role": "user",[m
+[32m+[m[32m            "content": prompt[m
+[32m+[m[32m        }[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m[32m    formatted_prompt = tokenizer.apply_chat_template([m
+[32m+[m[32m        messages,[m
+[32m+[m[32m        tokenize=False,[m
+[32m+[m[32m        add_generation_prompt=True[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    inputs = tokenizer([m
+[32m+[m[32m        formatted_prompt,[m
+[32m+[m[32m        return_tensors="pt"[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    print("Asking course identification LLM...")[m
+[32m+[m
+[32m+[m[32m    outputs = model.generate([m
+[32m+[m[32m        **inputs,[m
+[32m+[m[32m        max_new_tokens=50,[m
+[32m+[m[32m        do_sample=False[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    # Remove original prompt tokens[m
+[32m+[m[32m    new_tokens = outputs[0][[m
+[32m+[m[32m        inputs["input_ids"].shape[1]:[m
+[32m+[m[32m    ][m
+[32m+[m
+[32m+[m[32m    response = tokenizer.decode([m
+[32m+[m[32m        new_tokens,[m
+[32m+[m[32m        skip_special_tokens=True[m
+[32m+[m[32m    ).strip()[m
+[32m+[m
+[32m+[m[32m    print("Course identification response:")[m
+[32m+[m[32m    print(response)[m
+[32m+[m
+[32m+[m[32m    return response[m
+[32m+[m
+[32m+[m
+[32m+[m[32m# ============================================================[m
+[32m+[m[32m# 8. EXTRACT JSON FROM LLM RESPONSE[m
+[32m+[m[32m# ============================================================[m
+[32m+[m
+[32m+[m[32mdef extract_json(text):[m
+ [m
+     if not text:[m
+         return None[m
+[36m@@ -240,71 +291,103 @@[m [mdef extract_json(text):[m
+     if start == -1 or end == -1:[m
+         return None[m
+ [m
+[31m-    if end <= start:[m
+[31m-        return None[m
+[31m-[m
+[31m-    json_text = text[start:end + 1][m
+[31m-[m
+     try:[m
+ [m
+[31m-        return json.loads(json_text)[m
+[32m+[m[32m        json_text = text[[m
+[32m+[m[32m            start:end + 1[m
+[32m+[m[32m        ][m
+[32m+[m
+[32m+[m[32m        return json.loads([m
+[32m+[m[32m            json_text[m
+[32m+[m[32m        )[m
+ [m
+     except json.JSONDecodeError:[m
+ [m
+         return None[m
+ [m
+ [m
+[31m-# ------------------------------------------------------------[m
+[31m-# 8. VALIDATE COURSE CODE[m
+[31m-# ------------------------------------------------------------[m
+[32m+[m[32m# ============================================================[m
+[32m+[m[32m# 9. VALIDATE COURSE CODE[m
+[32m+[m[32m# ============================================================[m
+ [m
+ def validate_course_code(data):[m
+     """[m
+[31m-    Check that the AI returned a real course code.[m
+[32m+[m[32m    Validate the LLM output.[m
+[32m+[m
+[32m+[m[32m    Returns:[m
+[32m+[m[32m        Valid course code[m
+[32m+[m[32m        OR[m
+[32m+[m[32m        None when no valid course was identified.[m
+     """[m
+ [m
+[32m+[m[32m    # Output must be a dictionary[m
+     if not isinstance(data, dict):[m
+         return None[m
+ [m
+[31m-    course_code = data.get("course_code")[m
+[32m+[m[32m    # Get course_code[m
+[32m+[m[32m    code = data.get("course_code")[m
+[32m+[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m[32m    # IMPORTANT:[m
+[32m+[m[32m    # null means:[m
+[32m+[m[32m    # "The LLM could not confidently identify a course."[m
+[32m+[m[32m    # --------------------------------------------------------[m
+ [m
+[31m-    if not isinstance(course_code, str):[m
+[32m+[m[32m    if code is None:[m
+         return None[m
+ [m
+[31m-    course_code = course_code.strip().upper()[m
+[32m+[m[32m    # Course code must be a string[m
+[32m+[m[32m    if not isinstance(code, str):[m
+[32m+[m[32m        return None[m
+[32m+[m
+[32m+[m[32m    # Clean the code[m
+[32m+[m[32m    code = code.strip().upper()[m
+ [m
+[31m-    if course_code not in REAL_COURSE_CODES:[m
+[32m+[m[32m    # Check against real courses[m
+[32m+[m[32m    if code not in REAL_COURSE_CODES:[m
+         return None[m
+ [m
+[31m-    return course_code[m
+[32m+[m[32m    return code[m
+ [m
+ [m
+[31m-# ------------------------------------------------------------[m
+[31m-# 9. IDENTIFY COURSE[m
+[31m-# ------------------------------------------------------------[m
+[32m+[m[32m# ============================================================[m
+[32m+[m[32m# 10. MAIN COURSE IDENTIFICATION FUNCTION[m
+[32m+[m[32m# ============================================================[m
+ [m
+ def identify_course(message):[m
+     """[m
+[31m-    Identify a course from the student's message.[m
+[31m-[m
+[31m-    Process:[m
+[31m-[m
+[31m-        1. Try direct title matching.[m
+[31m-        2. Otherwise ask the AI.[m
+[31m-        3. Extract JSON.[m
+[31m-        4. Validate course code.[m
+[31m-        5. Retry once if necessary.[m
+[31m-        6. Stop safely if still invalid.[m
+[32m+[m[32m    Convert a natural-language student message[m
+[32m+[m[32m    into a valid course code.[m
+[32m+[m
+[32m+[m[32m    Flow:[m
+[32m+[m
+[32m+[m[32m        Student message[m
+[32m+[m[32m              ↓[m
+[32m+[m[32m        Direct matching[m
+[32m+[m[32m              ↓[m
+[32m+[m[32m        If not found[m
+[32m+[m[32m              ↓[m
+[32m+[m[32m            LLM[m
+[32m+[m[32m              ↓[m
+[32m+[m[32m        Extract JSON[m
+[32m+[m[32m              ↓[m
+[32m+[m[32m        Validate code[m
+[32m+[m[32m              ↓[m
+[32m+[m[32m        Return course[m
+     """[m
+ [m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m[32m    # STEP 1: Validate input[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m
+     if not isinstance(message, str):[m
+[32m+[m
+         return {[m
+             "success": False,[m
+             "course_code": None,[m
+[31m-            "message": "Invalid student message."[m
+[32m+[m[32m            "course_title": None[m
+         }[m
+ [m
+[31m-[m
+     message = message.strip()[m
+ [m
+     if not message:[m
+[36m@@ -312,323 +395,73 @@[m [mdef identify_course(message):[m
+         return {[m
+             "success": False,[m
+             "course_code": None,[m
+[31m-            "message": "Student message is empty."[m
+[32m+[m[32m            "course_title": None[m
+         }[m
+ [m
+[31m-[m
+     # --------------------------------------------------------[m
+[31m-    # FIRST: DIRECT TITLE MATCH[m
+[32m+[m[32m    # STEP 2: DIRECT MATCHING[m
+     # --------------------------------------------------------[m
+ [m
+[31m-    direct_match = dictionary_course_match(message)[m
+[32m+[m[32m    code = direct_course_match(message)[m
+ [m
+[31m-    if direct_match:[m
+[32m+[m[32m    if code:[m
+ [m
+         return {[m
+             "success": True,[m
+[31m-            "course_code": direct_match,[m
+[31m-            "message": "Course identified successfully."[m
+[32m+[m[32m            "course_code": code,[m
+[32m+[m[32m            "course_title": REAL_COURSES[code][m
+         }[m
+ [m
+[31m-[m
+     # --------------------------------------------------------[m
+[31m-    # SECOND: AI ATTEMPT[m
+[32m+[m[32m    # STEP 3: LLM FALLBACK[m
+     # --------------------------------------------------------[m
+ [m
+[31m-    ai_text = ask_ai_for_course(message)[m
+[31m-[m
+[31m-    parsed = extract_json(ai_text)[m
+[32m+[m[32m    try:[m
+ [m
+[31m-    course_code = validate_course_code(parsed)[m
+[32m+[m[32m        llm_response = ask_llm_for_course([m
+[32m+[m[32m            message[m
+[32m+[m[32m        )[m
+ [m
+[31m-    if course_code:[m
+[32m+[m[32m        # ----------------------------------------------------[m
+[32m+[m[32m        # STEP 4: EXTRACT JSON[m
+[32m+[m[32m        # ----------------------------------------------------[m
+ [m
+[31m-        return {[m
+[31m-            "success": True,[m
+[31m-            "course_code": course_code,[m
+[31m-            "message": "Course identified successfully."[m
+[31m-        }[m
+[32m+[m[32m        parsed = extract_json([m
+[32m+[m[32m            llm_response[m
+[32m+[m[32m        )[m
+ [m
+[32m+[m[32m        # ----------------------------------------------------[m
+[32m+[m[32m        # STEP 5: VALIDATE COURSE[m
+[32m+[m[32m        # ----------------------------------------------------[m
+ [m
+[31m-    # --------------------------------------------------------[m
+[31m-    # THIRD: ONE RETRY[m
+[31m-    # --------------------------------------------------------[m
+[31m-[m
+[31m-    ai_text = ask_ai_for_course(message)[m
+[32m+[m[32m        code = validate_course_code([m
+[32m+[m[32m            parsed[m
+[32m+[m[32m        )[m
+ [m
+[31m-    parsed = extract_json(ai_text)[m
+[32m+[m[32m        # ----------------------------------------------------[m
+[32m+[m[32m        # STEP 6: VALID COURSE FOUND[m
+[32m+[m[32m        # ----------------------------------------------------[m
+ [m
+[31m-    course_code = validate_course_code(parsed)[m
+[32m+[m[32m        if code:[m
+ [m
+[31m-    if course_code:[m
+[32m+[m[32m            return {[m
+[32m+[m[32m                "success": True,[m
+[32m+[m[32m                "course_code": code,[m
+[32m+[m[32m                "course_title": REAL_COURSES[code][m
+[32m+[m[32m            }[m
+ [m
+[31m-        return {[m
+[31m-            "success": True,[m
+[31m-            "course_code": course_code,[m
+[31m-            "message": "Course identified successfully."[m
+[31m-        }[m
+[32m+[m[32m    except Exception as error:[m
+ [m
+[32m+[m[32m        print([m
+[32m+[m[32m            f"Course LLM failed: {error}"[m
+[32m+[m[32m        )[m
+ [m
+     # --------------------------------------------------------[m
+[31m-    # FAILED[m
+[32m+[m[32m    # STEP 7: COURSE NOT IDENTIFIED[m
+     # --------------------------------------------------------[m
+ [m
+[31m-    valid_codes = ", ".join([m
+[31m-        sorted(REAL_COURSE_CODES)[m
+[31m-    )[m
+[31m-[m
+     return {[m
+         "success": False,[m
+         "course_code": None,[m
+[31m-        "message": ([m
+[31m-            "I could not identify a valid course. "[m
+[31m-            f"The seven real course codes are: {valid_codes}"[m
+[31m-        )[m
+[31m-    }[m
+[31m-[m
+[31m-[m
+[31m-# ------------------------------------------------------------[m
+[31m-# 10. TASK 8 TEST DATA[m
+[31m-# ------------------------------------------------------------[m
+[31m-[m
+[31m-TESTS = [[m
+[31m-    {[m
+[31m-        "request": "R1",[m
+[31m-        "student_id": "S-104",[m
+[31m-        "message": "I want to take Algorithms this term.",[m
+[31m-        "expected": "CS201"[m
+[31m-    },[m
+[31m-    {[m
+[31m-        "request": "R2",[m
+[31m-        "student_id": "S-101",[m
+[31m-        "message": "Can I add Distributed Systems?",[m
+[31m-        "expected": "CS310"[m
+[31m-    },[m
+[31m-    {[m
+[31m-        "request": "R3",[m
+[31m-        "student_id": "S-103",[m
+[31m-        "message": "I would like to join Databases please.",[m
+[31m-        "expected": "CS202"[m
+[31m-    },[m
+[31m-    {[m
+[31m-        "request": "R4",[m
+[31m-        "student_id": "S-102",[m
+[31m-        "message": ([m
+[31m-            "Trying to sign up for Machine Learning "[m
+[31m-            "and it will not let me."[m
+[31m-        ),[m
+[31m-        "expected": "CS301"[m
+[31m-    },[m
+[31m-    {[m
+[31m-        "request": "R5",[m
+[31m-        "student_id": "S-105",[m
+[31m-        "message": ([m
+[31m-            "Machine Learning please, "[m
+[31m-            "I have done everything it asks for."[m
+[31m-        ),[m
+[31m-        "expected": "CS301"[m
+[31m-    },[m
+[31m-    {[m
+[31m-        "request": "R6",[m
+[31m-        "student_id": "S-106",[m
+[31m-        "message": "Could I take Data Visualisation?",[m
+[31m-        "expected": "DS220"[m
+[32m+[m[32m        "course_title": None[m
+     }[m
+[31m-][m
+[31m-[m
+[31m-[m
+[31m-# ------------------------------------------------------------[m
+[31m-# 11. PRINT TEST HEADER[m
+[31m-# ------------------------------------------------------------[m
+[31m-[m
+[31m-def print_header(title):[m
+[31m-[m
+[31m-    print()[m
+[31m-    print("=" * 70)[m
+[31m-    print(title)[m
+[31m-    print("=" * 70)[m
+[31m-[m
+[31m-[m
+[31m-# ------------------------------------------------------------[m
+[31m-# 12. RUN TASK 8 TESTS[m
+[31m-# ------------------------------------------------------------[m
+[31m-[m
+[31m-def run_tests():[m
+[31m-[m
+[31m-    print_header([m
+[31m-        "TASK 8 - AI COURSE IDENTIFICATION"[m
+[31m-    )[m
+[31m-[m
+[31m-    passed = 0[m
+[31m-[m
+[31m-[m
+[31m-    # --------------------------------------------------------[m
+[31m-    # SIX REAL REQUESTS[m
+[31m-    # --------------------------------------------------------[m
+[31m-[m
+[31m-    for test in TESTS:[m
+[31m-[m
+[31m-        print()[m
+[31m-        print("=" * 70)[m
+[31m-        print(f"TESTING {test['request']}")[m
+[31m-        print("=" * 70)[m
+[31m-[m
+[31m-        print()[m
+[31m-        print("Student ID:")[m
+[31m-        print(test["student_id"])[m
+[31m-[m
+[31m-        print()[m
+[31m-        print("Student message:")[m
+[31m-        print(test["message"])[m
+[31m-[m
+[31m-        print()[m
+[31m-        print("Expected course code:")[m
+[31m-        print(test["expected"])[m
+[31m-[m
+[31m-[m
+[31m-        result = identify_course([m
+[31m-            test["message"][m
+[31m-        )[m
+[31m-[m
+[31m-[m
+[31m-        print()[m
+[31m-        print("Result:")[m
+[31m-        print(result)[m
+[31m-[m
+[31m-[m
+[31m-        if ([m
+[31m-            result["success"][m
+[31m-            and result["course_code"][m
+[31m-            == test["expected"][m
+[31m-        ):[m
+[31m-[m
+[31m-            print()[m
+[31m-            print("RESULT: PASS")[m
+[31m-[m
+[31m-            passed += 1[m
+[31m-[m
+[31m-        else:[m
+[31m-[m
+[31m-            print()[m
+[31m-            print("RESULT: FAIL")[m
+[31m-[m
+[31m-[m
+[31m-    # --------------------------------------------------------[m
+[31m-    # FAKE COURSE CODE TEST[m
+[31m-    # --------------------------------------------------------[m
+[31m-[m
+[31m-    print()[m
+[31m-    print("=" * 70)[m
+[31m-    print("TEST 7 - FAKE COURSE CODE")[m
+[31m-    print("=" * 70)[m
+[31m-[m
+[31m-    fake_code = "CS999"[m
+[31m-[m
+[31m-    print()[m
+[31m-    print("Fake course code:")[m
+[31m-    print(fake_code)[m
+[31m-[m
+[31m-[m
+[31m-    fake_result = validate_course_code([m
+[31m-        {[m
+[31m-            "course_code": fake_code[m
+[31m-        }[m
+[31m-    )[m
+[31m-[m
+[31m-[m
+[31m-    if fake_result is None:[m
+[31m-[m
+[31m-        print()[m
+[31m-        print("RESULT: PASS")[m
+[31m-        print("Fake course code was correctly rejected.")[m
+[31m-[m
+[31m-    else:[m
+[31m-[m
+[31m-        print()[m
+[31m-        print("RESULT: FAIL")[m
+[31m-[m
+[31m-[m
+[31m-    # --------------------------------------------------------[m
+[31m-    # NO JSON TEST[m
+[31m-    # --------------------------------------------------------[m
+[31m-[m
+[31m-    print()[m
+[31m-    print("=" * 70)[m
+[31m-    print("TEST 8 - NO JSON RESPONSE")[m
+[31m-    print("=" * 70)[m
+[31m-[m
+[31m-[m
+[31m-    fake_ai_response = ([m
+[31m-        "I cannot determine the course."[m
+[31m-    )[m
+[31m-[m
+[31m-[m
+[31m-    print()[m
+[31m-    print("Fake AI response:")[m
+[31m-    print(fake_ai_response)[m
+[31m-[m
+[31m-[m
+[31m-    no_json_result = extract_json([m
+[31m-        fake_ai_response[m
+[31m-    )[m
+[31m-[m
+[31m-[m
+[31m-    if no_json_result is None:[m
+[31m-[m
+[31m-        print()[m
+[31m-        print("RESULT: PASS")[m
+[31m-        print("No JSON was found.")[m
+[31m-        print("Program did not crash.")[m
+[31m-[m
+[31m-    else:[m
+[31m-[m
+[31m-        print()[m
+[31m-        print("RESULT: FAIL")[m
+[31m-[m
+[31m-[m
+[31m-    # --------------------------------------------------------[m
+[31m-    # FINAL SUMMARY[m
+[31m-    # --------------------------------------------------------[m
+[31m-[m
+[31m-    print_header([m
+[31m-        "TASK 8 FINAL SUMMARY"[m
+[31m-    )[m
+[31m-[m
+[31m-    print([m
+[31m-        f"Six requests passed: "[m
+[31m-        f"{passed}/{len(TESTS)}"[m
+[31m-    )[m
+[31m-[m
+[31m-    print([m
+[31m-        "Fake course code test: PASSED"[m
+[31m-    )[m
+[31m-[m
+[31m-    print([m
+[31m-        "No JSON test: PASSED"[m
+[31m-    )[m
+[31m-[m
+[31m-    print()[m
+[31m-    print("=" * 70)[m
+[31m-[m
+[31m-    if passed == len(TESTS):[m
+[31m-[m
+[31m-        print([m
+[31m-            "TASK 8: ALL TESTS PASSED"[m
+[31m-        )[m
+[31m-[m
+[31m-    else:[m
+[31m-[m
+[31m-        print([m
+[31m-            "TASK 8: SOME REQUESTS FAILED"[m
+[31m-        )[m
+[31m-[m
+[31m-    print("=" * 70)[m
+[31m-[m
+[31m-[m
+[31m-# ------------------------------------------------------------[m
+[31m-# 13. PROGRAM START[m
+[31m-# ------------------------------------------------------------[m
+[31m-[m
+[31m-if __name__ == "__main__":[m
+[31m-[m
+[31m-    run_tests()[m
+\ No newline at end of file[m
+[1mdiff --git a/Task1/app.py b/Task1/app.py[m
+[1mindex ad2c1e6..53795cb 100644[m
+[1m--- a/Task1/app.py[m
+[1m+++ b/Task1/app.py[m
+[36m@@ -1,7 +1,13 @@[m
+[32m+[m[32m# Path helps us work with files/folders safely across operating systems.[m
+ from pathlib import Path[m
+[32m+[m
+[32m+[m[32m# re is used for pattern matching, such as finding course codes/numbers in text.[m
+ import re[m
+ [m
+[32m+[m[32m# requests lets the Streamlit app communicate with the FastAPI backend.[m
+ import requests[m
+[32m+[m
+[32m+[m[32m# Streamlit creates the web interface for the Course Enrolment Assistant.[m
+ import streamlit as st[m
+ [m
+ [m
+[36m@@ -9,16 +15,22 @@[m [mimport streamlit as st[m
+ # OPTIONAL PROJECT MODULES[m
+ # ============================================================[m
+ [m
+[32m+[m[32m# Try to connect app.py with ai.py.[m
+[32m+[m[32m# If ai.py is unavailable, the app continues with a simple fallback.[m
+ try:[m
+     from ai import identify_course as ai_identify_course[m
+ except Exception:[m
+     ai_identify_course = None[m
+ [m
+[32m+[m[32m# Connect app.py with reply.py, which generates the final student response.[m
+ try:[m
+[31m-    from reply import generate_reply as ai_generate_reply [m
+[32m+[m[32m    import reply as reply_module[m
+[32m+[m[32m    from reply import generate_reply as ai_generate_reply[m
+ except Exception:[m
+[32m+[m[32m    reply_module = None[m
+     ai_generate_reply = None[m
+ [m
+[32m+[m[32m# Connect app.py with search.py, which performs handbook/vector search.[m
+ try:[m
+     from search import search as handbook_search[m
+ except Exception:[m
+[36m@@ -40,6 +52,7 @@[m [mst.set_page_config([m
+ # CUSTOM CSS[m
+ # ============================================================[m
+ [m
+[32m+[m[32m# Locate style.css in the same folder as this Python file.[m
+ CSS_FILE = Path(__file__).resolve().parent / "style.css"[m
+ [m
+ if CSS_FILE.exists():[m
+[36m@@ -59,6 +72,7 @@[m [mPROJECT_DIR = BASE_DIR.parent[m
+ DATA_DIR = PROJECT_DIR / "data"[m
+ HANDBOOK_DIR = DATA_DIR / "handbook"[m
+ [m
+[32m+[m[32m# FastAPI runs locally on port 8000; Streamlit sends enrolment requests here.[m
+ API_URL = "http://127.0.0.1:8000"[m
+ [m
+ [m
+[36m@@ -171,10 +185,12 @@[m [mTASK10_REQUESTS = [[m
+ # FASTAPI HELPER[m
+ # ============================================================[m
+ [m
+[32m+[m[32m# Central helper used whenever this Streamlit app needs data from FastAPI.[m
+ def api_get(endpoint):[m
+     """Call the FastAPI backend safely."""[m
+ [m
+     try:[m
+[32m+[m[32m        # Build the complete backend URL and send a GET request.[m
+         response = requests.get([m
+             f"{API_URL}{endpoint}",[m
+             timeout=30,[m
+[36m@@ -209,80 +225,54 @@[m [mdef api_get(endpoint):[m
+ # ============================================================[m
+ # COURSE IDENTIFICATION[m
+ # ============================================================[m
+[31m-[m
+[31m-def identify_course_fallback(message):[m
+[31m-    """Simple non-AI course-identification fallback."""[m
+[31m-[m
+[31m-    text = message.lower()[m
+[31m-[m
+[31m-    for code in COURSES:[m
+[31m-        if re.search([m
+[31m-            rf"\b{re.escape(code.lower())}\b",[m
+[31m-            text,[m
+[31m-        ):[m
+[31m-            return code[m
+[31m-[m
+[31m-    for code, title in COURSES.items():[m
+[31m-        if title.lower() in text:[m
+[31m-            return code[m
+[31m-[m
+[31m-    aliases = {[m
+[31m-        "algorithms": "CS201",[m
+[31m-        "programming foundations": "CS101",[m
+[31m-        "databases": "CS202",[m
+[31m-        "machine learning": "CS301",[m
+[31m-        "distributed systems": "CS310",[m
+[31m-        "data visualisation": "DS220",[m
+[31m-        "data visualization": "DS220",[m
+[31m-        "statistics": "MA150",[m
+[31m-    }[m
+[31m-[m
+[31m-    for phrase, code in aliases.items():[m
+[31m-        if phrase in text:[m
+[31m-            return code[m
+[31m-[m
+[31m-    return None[m
+[31m-[m
+[31m-[m
+[32m+[m[32m# Convert the student's natural-language question into a known course code.[m
+ def identify_course(message):[m
+[31m-    """Use AI course identification, then fall back safely."""[m
+[32m+[m[32m    """Use ai.py to identify the course."""[m
+ [m
+     if ai_identify_course is not None:[m
+ [m
+         try:[m
+[31m-            result = ai_identify_course([m
+[31m-                message,[m
+[31m-                list(COURSES.items()),[m
+[31m-            )[m
+[32m+[m[32m            # ai.py accepts only the student message[m
+[32m+[m[32m            # ai.py receives only the student's message and tries to identify the course.[m
+[32m+[m[32m            result = ai_identify_course(message)[m
+ [m
+[32m+[m[32m            # ai.py returns a dictionary[m
+             if isinstance(result, dict):[m
+ [m
+[31m-                code = result.get([m
+[31m-                    "course_code"[m
+[31m-                )[m
+[32m+[m[32m                code = result.get("course_code")[m
+[32m+[m
+[32m+[m[32m                if code:[m
+[32m+[m[32m                    code = code.strip().upper()[m
+ [m
+[32m+[m[32m                # Only accept a course code that actually exists in our COURSE dictionary.[m
+                 if code in COURSES:[m
+                     return code[m
+ [m
+[32m+[m[32m            # Support a plain string course code too[m
+             if isinstance(result, str):[m
+ [m
+[31m-                if result in COURSES:[m
+[31m-                    return result[m
+[32m+[m[32m                code = result.strip().upper()[m
+[32m+[m
+[32m+[m[32m                if code in COURSES:[m
+[32m+[m[32m                    return code[m
+ [m
+         except Exception as error:[m
+[32m+[m
+             print([m
+                 f"Course AI failed: {error}"[m
+             )[m
+ [m
+[31m-    return identify_course_fallback([m
+[31m-        message[m
+[31m-    )[m
+[31m-[m
+[32m+[m[32m    # Only use this if ai.py cannot identify the course[m
+[32m+[m[32m    # Fallback: if AI cannot identify the course, look for an exact course code.[m
+[32m+[m[32m    for code in COURSES:[m
+ [m
+[32m+[m[32m        if code in message.upper():[m
+[32m+[m[32m            return code[m
+ # ============================================================[m
+ # VECTOR / RAG HANDBOOK RETRIEVAL[m
+ # ============================================================[m
+ [m
+[32m+[m[32m# Retrieve relevant handbook chunks using the vector/RAG search module.[m
+ def retrieve_handbook([m
+     question,[m
+     reasons,[m
+[36m@@ -308,6 +298,8 @@[m [mdef retrieve_handbook([m
+         reasons or [][m
+     )[m
+ [m
+[32m+[m[32m    # Combine the student's question with trusted Python rule results.[m
+[32m+[m[32m    # This gives the vector search both the user's intent and the verified problem.[m
+     retrieval_query = ([m
+         f"{question}\n"[m
+         f"Verified enrolment reasons: {reason_text}"[m
+[36m@@ -315,6 +307,7 @@[m [mdef retrieve_handbook([m
+ [m
+     try:[m
+ [m
+[32m+[m[32m        # search.py converts this query into embeddings and returns the closest handbook chunks.[m
+         results = handbook_search([m
+             retrieval_query,[m
+             k=k,[m
+[36m@@ -501,6 +494,7 @@[m [mdef get_handbook_content([m
+ # PYTHON-VERIFIED ALTERNATIVES[m
+ # ============================================================[m
+ [m
+[32m+[m[32m# Find other courses that Python confirms the student can take.[m
+ def get_eligible_alternatives([m
+     student_id,[m
+     blocked_course,[m
+[36m@@ -544,6 +538,7 @@[m [mdef get_eligible_alternatives([m
+ # FINAL REPLY VALIDATION[m
+ # ============================================================[m
+ [m
+[32m+[m[32m# Check that the AI response contains only facts/pages/numbers supplied by trusted logic.[m
+ def validate_reply([m
+     reply,[m
+     reasons,[m
+[36m@@ -564,6 +559,7 @@[m [mdef validate_reply([m
+         reply_lower.split()[m
+     )[m
+ [m
+[32m+[m[32m    # Every verified blocking reason must appear in the final AI response.[m
+     for reason in reasons or []:[m
+ [m
+         normalized_reason = " ".join([m
+[36m@@ -577,6 +573,7 @@[m [mdef validate_reply([m
+                 f"Missing reason: {reason}",[m
+             )[m
+ [m
+[32m+[m[32m    # Every required handbook page must also be mentioned in the response.[m
+     for page in pages or []:[m
+ [m
+         if page.lower() not in reply_lower:[m
+[36m@@ -684,6 +681,7 @@[m [mdef validate_reply([m
+ # SAFE FINAL RESPONSE[m
+ # ============================================================[m
+ [m
+[32m+[m[32m# Build a deterministic response when the AI response fails validation.[m
+ def make_safe_reply([m
+     reasons,[m
+     pages,[m
+[36m@@ -767,6 +765,7 @@[m [mdef make_safe_reply([m
+ # REPLY.PY CONNECTION[m
+ # ============================================================[m
+ [m
+[32m+[m[32m# Connect the verified Python/RAG data to reply.py to generate the final response.[m
+ def generate_reply([m
+     reasons,[m
+     handbook_content,[m
+[36m@@ -788,6 +787,10 @@[m [mdef generate_reply([m
+ [m
+     alternatives = alternatives or [][m
+ [m
+[32m+[m[32m    # Reset UI debug values for this request.[m
+[32m+[m[32m    ai_attempt = ""[m
+[32m+[m[32m    ai_validation_error = ""[m
+[32m+[m
+     if ai_generate_reply is not None:[m
+ [m
+         try:[m
+[36m@@ -811,8 +814,19 @@[m [mdef generate_reply([m
+             except Exception:[m
+                 pass[m
+ [m
+[32m+[m[32m            # reply.py generates the natural-language answer using only the supplied context.[m
+             result = ai_generate_reply(**reply_kwargs)[m
+ [m
+[32m+[m[32m            # reply.py keeps the raw model draft and validation error[m
+[32m+[m[32m            # so Streamlit can display them instead of only the terminal log.[m
+[32m+[m[32m            if reply_module is not None:[m
+[32m+[m[32m                ai_attempt = str([m
+[32m+[m[32m                    getattr(reply_module, "last_ai_response", "") or ""[m
+[32m+[m[32m                )[m
+[32m+[m[32m                ai_validation_error = str([m
+[32m+[m[32m                    getattr(reply_module, "last_ai_validation_error", "") or ""[m
+[32m+[m[32m                )[m
+[32m+[m
+             if ([m
+                 isinstance(result, tuple)[m
+                 and len(result) == 2[m
+[36m@@ -848,6 +862,7 @@[m [mdef generate_reply([m
+ [m
+                 source = "AI"[m
+ [m
+[32m+[m[32m            # Validate the generated response before allowing it to reach the user.[m
+             valid, message = ([m
+                 validate_reply([m
+                     reply,[m
+[36m@@ -859,18 +874,29 @@[m [mdef generate_reply([m
+ [m
+             if valid:[m
+ [m
+[32m+[m[32m                st.session_state["last_ai_attempt"] = ai_attempt[m
+[32m+[m[32m                st.session_state["last_ai_validation_error"] = ""[m
+                 return reply, source[m
+ [m
+[32m+[m[32m            st.session_state["last_ai_attempt"] = ai_attempt[m
+[32m+[m[32m            st.session_state["last_ai_validation_error"] = ai_validation_error or message[m
+[32m+[m
+             print([m
+                 f"App validation failed: {message}"[m
+             )[m
+ [m
+         except Exception as error:[m
+ [m
+[32m+[m[32m            st.session_state["last_ai_attempt"] = ai_attempt[m
+[32m+[m[32m            st.session_state["last_ai_validation_error"] = str(error)[m
+[32m+[m
+             print([m
+                 f"reply.py failed: {error}"[m
+             )[m
+ [m
+[32m+[m[32m    st.session_state["last_ai_attempt"] = ai_attempt[m
+[32m+[m[32m    st.session_state["last_ai_validation_error"] = ai_validation_error[m
+[32m+[m
+     return ([m
+         make_safe_reply([m
+             reasons,[m
+[36m@@ -905,6 +931,7 @@[m [mdef pages_cover_expected([m
+     )[m
+ [m
+ [m
+[32m+[m[32m# Run one complete Task 10 test from course identification to final validation.[m
+ def run_task10_case([m
+     test[m
+ ):[m
+[36m@@ -919,7 +946,7 @@[m [mdef run_task10_case([m
+     ][m
+ [m
+     # --------------------------------------------------------[m
+[31m-    # Step 1 - course identification[m
+[32m+[m[32m    # Step 1: identify which course the student is asking about.[m
+     # --------------------------------------------------------[m
+ [m
+     course_code = identify_course([m
+[36m@@ -952,7 +979,7 @@[m [mdef run_task10_case([m
+         }[m
+ [m
+     # --------------------------------------------------------[m
+[31m-    # Step 2 - Python rules[m
+[32m+[m[32m    # UI workflow Step 2: let the backend check eligibility.[m
+     # --------------------------------------------------------[m
+ [m
+     status, data = api_get([m
+[36m@@ -990,7 +1017,7 @@[m [mdef run_task10_case([m
+     )[m
+ [m
+     # --------------------------------------------------------[m
+[31m-    # Step 3 - REAL VECTOR / RAG retrieval[m
+[32m+[m[32m    # Step 3: retrieve supporting handbook information using vector search/RAG.[m
+     # --------------------------------------------------------[m
+ [m
+     ([m
+[36m@@ -1025,7 +1052,7 @@[m [mdef run_task10_case([m
+         )[m
+ [m
+     # --------------------------------------------------------[m
+[31m-    # Step 4 - Python alternatives[m
+[32m+[m[32m    # Step 4: if the course is blocked, find alternatives using Python rules.[m
+     # --------------------------------------------------------[m
+ [m
+     alternatives = [][m
+[36m@@ -1047,7 +1074,7 @@[m [mdef run_task10_case([m
+         )[m
+ [m
+     # --------------------------------------------------------[m
+[31m-    # Step 5 - reply.py[m
+[32m+[m[32m    # Step 5: send the verified facts and handbook context to reply.py.[m
+     # --------------------------------------------------------[m
+ [m
+     reply, source = generate_reply([m
+[36m@@ -1058,8 +1085,11 @@[m [mdef run_task10_case([m
+         alternatives=alternatives,[m
+     )[m
+ [m
+[32m+[m[32m    ai_attempt = st.session_state.get("last_ai_attempt", "")[m
+[32m+[m[32m    ai_validation_error = st.session_state.get("last_ai_validation_error", "")[m
+[32m+[m
+     # --------------------------------------------------------[m
+[31m-    # Step 6 - final safety validation[m
+[32m+[m[32m    # Step 6: validate the generated answer again before displaying it.[m
+     # --------------------------------------------------------[m
+ [m
+     reply_pass, validation_message = ([m
+[36m@@ -1091,7 +1121,7 @@[m [mdef run_task10_case([m
+         source = "SAFE"[m
+ [m
+     # --------------------------------------------------------[m
+[31m-    # Step 7 - compare expected result[m
+[32m+[m[32m    # Step 7: compare the actual result against the expected Task 10 result.[m
+     # --------------------------------------------------------[m
+ [m
+     reasons_pass = ([m
+[36m@@ -1124,6 +1154,8 @@[m [mdef run_task10_case([m
+         "reply_pass": reply_pass,[m
+         "validation_message": validation_message,[m
+         "reply_source": source,[m
+[32m+[m[32m        "ai_attempt": ai_attempt,[m
+[32m+[m[32m        "ai_validation_error": ai_validation_error,[m
+         "alternatives": alternatives,[m
+         "overall": overall,[m
+     }[m
+[36m@@ -1133,6 +1165,7 @@[m [mdef run_task10_case([m
+ # STREAMLIT PAGE[m
+ # ============================================================[m
+ [m
+[32m+[m[32m# Display the main application title.[m
+ st.title([m
+     "🎓 Course Enrolment Assistant"[m
+ )[m
+[36m@@ -1173,6 +1206,7 @@[m [mstudent_question = st.text_area([m
+     key="ai_question",[m
+ )[m
+ [m
+[32m+[m[32m# Start the complete AI → Python → RAG → reply workflow when the user clicks the button.[m
+ if st.button([m
+     "Ask Assistant",[m
+     type="primary",[m
+[36m@@ -1193,7 +1227,7 @@[m [mif st.button([m
+     else:[m
+ [m
+         # ----------------------------------------------------[m
+[31m-        # Step 1 - course[m
+[32m+[m[32m        # UI workflow Step 1: identify the requested course.[m
+         # ----------------------------------------------------[m
+ [m
+         with st.spinner([m
+[36m@@ -1255,7 +1289,7 @@[m [mif st.button([m
+                 )[m
+ [m
+                 # --------------------------------------------[m
+[31m-                # Step 3 - REAL RAG[m
+[32m+[m[32m                # UI workflow Step 3: retrieve supporting handbook content.[m
+                 # --------------------------------------------[m
+ [m
+                 with st.spinner([m
+[36m@@ -1301,7 +1335,7 @@[m [mif st.button([m
+                     )[m
+ [m
+                 # --------------------------------------------[m
+[31m-                # Step 4 - alternatives[m
+[32m+[m[32m                # UI workflow Step 4: calculate eligible alternative courses.[m
+                 # --------------------------------------------[m
+ [m
+                 alternatives = [][m
+[36m@@ -1327,7 +1361,7 @@[m [mif st.button([m
+                         )[m
+ [m
+                 # --------------------------------------------[m
+[31m-                # Step 5 - final reply[m
+[32m+[m[32m                # UI workflow Step 5: generate the student's final answer.[m
+                 # --------------------------------------------[m
+ [m
+                 with st.spinner([m
+[36m@@ -1344,8 +1378,11 @@[m [mif st.button([m
+                         )[m
+                     )[m
+ [m
+[32m+[m[32m                ai_attempt = st.session_state.get("last_ai_attempt", "")[m
+[32m+[m[32m                ai_validation_error = st.session_state.get("last_ai_validation_error", "")[m
+[32m+[m
+                 # --------------------------------------------[m
+[31m-                # Step 6 - validate[m
+[32m+[m[32m                # UI workflow Step 6: verify that the answer is factually safe.[m
+                 # --------------------------------------------[m
+ [m
+                 reply_pass, validation_message = ([m
+[36m@@ -1377,7 +1414,7 @@[m [mif st.button([m
+                     source = "SAFE"[m
+ [m
+                 # --------------------------------------------[m
+[31m-                # DECISION[m
+[32m+[m[32m                # Show the trusted Python enrolment decision separately from the AI wording.[m
+                 # --------------------------------------------[m
+ [m
+                 st.subheader([m
+[36m@@ -1403,7 +1440,7 @@[m [mif st.button([m
+                         )[m
+ [m
+                 # --------------------------------------------[m
+[31m-                # RAG RESULTS[m
+[32m+[m[32m                # Show the handbook chunks returned by the vector search.[m
+                 # --------------------------------------------[m
+ [m
+                 st.subheader([m
+[36m@@ -1474,7 +1511,19 @@[m [mif st.button([m
+                         )[m
+ [m
+                 # --------------------------------------------[m
+[31m-                # FINAL REPLY[m
+[32m+[m[32m                # AI DRAFT (BEFORE VALIDATION)[m
+[32m+[m[32m                # --------------------------------------------[m
+[32m+[m
+[32m+[m[32m                if ai_attempt:[m
+[32m+[m[32m                    with st.expander("🤖 AI Draft (before validation)", expanded=False):[m
+[32m+[m[32m                        st.code(ai_attempt, language="text")[m
+[32m+[m[32m                        if ai_validation_error:[m
+[32m+[m[32m                            st.error([m
+[32m+[m[32m                                f"AI draft rejected: {ai_validation_error}"[m
+[32m+[m[32m                            )[m
+[32m+[m
+[32m+[m[32m                # --------------------------------------------[m
+[32m+[m[32m                # Display the final validated response to the student.[m
+                 # --------------------------------------------[m
+ [m
+                 st.subheader([m
+[36m@@ -1505,6 +1554,7 @@[m [mst.write([m
+     "Python reasons, RAG handbook retrieval, and final reply."[m
+ )[m
+ [m
+[32m+[m[32m# Run the complete predefined Task 10 test suite.[m
+ if st.button([m
+     "▶ Run All Six Task 10 Tests",[m
+     type="primary",[m
+[36m@@ -1690,6 +1740,17 @@[m [mif ([m
+                     f"score={item.get('score')}"[m
+                 )[m
+ [m
+[32m+[m[32m        if result.get("ai_attempt"):[m
+[32m+[m[32m            with st.expander("🤖 AI Draft (before validation)", expanded=False):[m
+[32m+[m[32m                st.code([m
+[32m+[m[32m                    result.get("ai_attempt", ""),[m
+[32m+[m[32m                    language="text",[m
+[32m+[m[32m                )[m
+[32m+[m[32m                if result.get("ai_validation_error"):[m
+[32m+[m[32m                    st.error([m
+[32m+[m[32m                        f"AI draft rejected: {result.get('ai_validation_error')}"[m
+[32m+[m[32m                    )[m
+[32m+[m
+         st.write([m
+             "**Final reply:**"[m
+         )[m
+[36m@@ -1849,6 +1910,7 @@[m [mif ([m
+ # 3. STUDENT LOOKUP[m
+ # ============================================================[m
+ [m
+[32m+[m[32m# Section for retrieving a student's details and current enrolments.[m
+ st.header([m
+     "3. Student Lookup"[m
+ )[m
+[36m@@ -1978,6 +2040,7 @@[m [mif st.button([m
+ # 4. COURSE LIST[m
+ # ============================================================[m
+ [m
+[32m+[m[32m# Section for displaying all courses and their current capacity.[m
+ st.header([m
+     "4. Course List"[m
+ )[m
+[36m@@ -2072,6 +2135,7 @@[m [mif st.button([m
+ # 5. MANUAL ENROLMENT CHECK[m
+ # ============================================================[m
+ [m
+[32m+[m[32m# Section for manually checking one student/course combination.[m
+ st.header([m
+     "5. Manual Enrolment Check"[m
+ )[m
+[1mdiff --git a/Task1/reply.py b/Task1/reply.py[m
+[1mindex 68a53f4..f19e0ff 100644[m
+[1m--- a/Task1/reply.py[m
+[1m+++ b/Task1/reply.py[m
+[36m@@ -18,15 +18,37 @@[m [mMODEL_NAME = "HuggingFaceTB/SmolLM2-1.7B-Instruct"[m
+ # 2. LOAD AI MODEL[m
+ # ============================================================[m
+ [m
+[31m-print("Loading reply model...")[m
+[32m+[m[32m# Load the model only when it is first needed.[m
+[32m+[m[32m# This avoids loading the 1.7B model during Streamlit import/startup.[m
+[32m+[m[32mtokenizer = None[m
+[32m+[m[32mmodel = None[m
+ [m
+[31m-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)[m
+[32m+[m[32m# Latest AI draft and validation error, exposed to app.py for UI display.[m
+[32m+[m[32mlast_ai_response = ""[m
+[32m+[m[32mlast_ai_validation_error = ""[m
+ [m
+[31m-model = AutoModelForCausalLM.from_pretrained([m
+[31m-    MODEL_NAME[m
+[31m-)[m
+ [m
+[31m-print("Reply model loaded.")[m
+[32m+[m[32mdef load_reply_model():[m
+[32m+[m[32m    """Load the reply model once, on first use."""[m
+[32m+[m
+[32m+[m[32m    global tokenizer, model[m
+[32m+[m
+[32m+[m[32m    if tokenizer is not None and model is not None:[m
+[32m+[m[32m        return[m
+[32m+[m
+[32m+[m[32m    print("Loading reply model...")[m
+[32m+[m
+[32m+[m[32m    tokenizer = AutoTokenizer.from_pretrained([m
+[32m+[m[32m        MODEL_NAME[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    model = AutoModelForCausalLM.from_pretrained([m
+[32m+[m[32m        MODEL_NAME[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    model.eval()[m
+[32m+[m
+[32m+[m[32m    print("Reply model loaded.")[m
+ [m
+ [m
+ # ============================================================[m
+[36m@@ -152,6 +174,7 @@[m [mdef check_numbers_and_codes([m
+     return True, ""[m
+ [m
+ [m
+[32m+[m
+ def check_waiver_safety(reply):[m
+ [m
+     reply_lower = reply.lower()[m
+[36m@@ -236,6 +259,48 @@[m [mdef needs_alternative(reasons):[m
+     )[m
+ [m
+ [m
+[32m+[m[32mdef normalize_alternatives(alternatives):[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Convert alternatives to:[m
+[32m+[m[32m        [("CS101", "Programming Foundations"), ...][m
+[32m+[m
+[32m+[m[32m    Supports both:[m
+[32m+[m[32m        {"course_code": "CS101", "title": "Programming Foundations"}[m
+[32m+[m[32m    and:[m
+[32m+[m[32m        ("CS101", "Programming Foundations")[m
+[32m+[m[32m    """[m
+[32m+[m
+[32m+[m[32m    normalized = [][m
+[32m+[m
+[32m+[m[32m    for alternative in alternatives or []:[m
+[32m+[m
+[32m+[m[32m        if isinstance(alternative, dict):[m
+[32m+[m
+[32m+[m[32m            code = str([m
+[32m+[m[32m                alternative.get("course_code", "")[m
+[32m+[m[32m            ).strip()[m
+[32m+[m
+[32m+[m[32m            title = str([m
+[32m+[m[32m                alternative.get("title", "")[m
+[32m+[m[32m            ).strip()[m
+[32m+[m
+[32m+[m[32m            if code and title:[m
+[32m+[m[32m                normalized.append((code, title))[m
+[32m+[m
+[32m+[m[32m        elif ([m
+[32m+[m[32m            isinstance(alternative, (tuple, list))[m
+[32m+[m[32m            and len(alternative) >= 2[m
+[32m+[m[32m        ):[m
+[32m+[m
+[32m+[m[32m            code = str(alternative[0]).strip()[m
+[32m+[m[32m            title = str(alternative[1]).strip()[m
+[32m+[m
+[32m+[m[32m            if code and title:[m
+[32m+[m[32m                normalized.append((code, title))[m
+[32m+[m
+[32m+[m[32m    return normalized[m
+[32m+[m
+[32m+[m
+ # ============================================================[m
+ # 5. SAFE FALLBACK[m
+ # ============================================================[m
+[36m@@ -243,7 +308,8 @@[m [mdef needs_alternative(reasons):[m
+ def fallback_reply([m
+     reasons,[m
+     handbook_files,[m
+[31m-    alternatives[m
+[32m+[m[32m    alternatives,[m
+[32m+[m[32m    handbook_text=None[m
+ ):[m
+     """[m
+     Deterministic answer used when the local AI output[m
+[36m@@ -254,7 +320,9 @@[m [mdef fallback_reply([m
+ [m
+     reasons = reasons or [][m
+     handbook_files = handbook_files or [][m
+[31m-    alternatives = alternatives or [][m
+[32m+[m[32m    alternatives = normalize_alternatives([m
+[32m+[m[32m        alternatives[m
+[32m+[m[32m    )[m
+ [m
+     if reasons:[m
+ [m
+[36m@@ -287,6 +355,9 @@[m [mdef fallback_reply([m
+             f"{page_lines}"[m
+         )[m
+ [m
+[32m+[m[32m    # Keep the final student reply concise.[m
+[32m+[m[32m    # Retrieved handbook text is displayed separately by app.py.[m
+[32m+[m
+     if ([m
+         reasons[m
+         and needs_alternative(reasons)[m
+[36m@@ -368,10 +439,14 @@[m [mdef ask_ai([m
+     uses the safe deterministic response instead of making[m
+     another slow model call.[m
+     """[m
+[32m+[m[32m    load_reply_model()[m
+[32m+[m
+ [m
+     reasons = reasons or [][m
+     handbook_files = handbook_files or [][m
+[31m-    alternatives = alternatives or [][m
+[32m+[m[32m    alternatives = normalize_alternatives([m
+[32m+[m[32m        alternatives[m
+[32m+[m[32m    )[m
+ [m
+     reasons_text = "\n".join([m
+         f"- {reason}"[m
+[36m@@ -405,8 +480,10 @@[m [mDo NOT make a new decision.[m
+ Write only a short student-facing reply.[m
+ [m
+ STRICT RULES:[m
+[31m-- Copy every Python reason EXACTLY.[m
+[31m-- Do not paraphrase or shorten Python reasons.[m
+[32m+[m[32m- Copy every Python reason EXACTLY as written.[m
+[32m+[m[32m- Each Python reason must appear as a complete line in the final reply.[m
+[32m+[m[32m- Do not paraphrase, rewrite, shorten, or reinterpret any Python reason.[m
+[32m+[m[32m- Never replace a course code inside a reason with a course name or another word.[m
+ - Mention every supplied handbook filename EXACTLY.[m
+ - Use the handbook content only as supporting guidance.[m
+ - Do not invent facts, numbers, dates, or course codes.[m
+[36m@@ -492,6 +569,10 @@[m [mdef validate_reply([m
+     alternatives[m
+ ):[m
+ [m
+[32m+[m[32m    alternatives = normalize_alternatives([m
+[32m+[m[32m        alternatives[m
+[32m+[m[32m    )[m
+[32m+[m
+     valid, error = check_reasons([m
+         reply,[m
+         reasons[m
+[36m@@ -581,6 +662,12 @@[m [mdef generate_reply([m
+         "SAFE"[m
+     """[m
+ [m
+[32m+[m[32m    global last_ai_response, last_ai_validation_error[m
+[32m+[m
+[32m+[m[32m    # Reset debug values for this request.[m
+[32m+[m[32m    last_ai_response = ""[m
+[32m+[m[32m    last_ai_validation_error = ""[m
+[32m+[m
+     # Correct alias handling.[m
+     if handbook is None:[m
+         handbook = handbook_content[m
+[36m@@ -590,7 +677,9 @@[m [mdef generate_reply([m
+ [m
+     reasons = reasons or [][m
+     pages = pages or [][m
+[31m-    alternatives = alternatives or [][m
+[32m+[m[32m    alternatives = normalize_alternatives([m
+[32m+[m[32m        alternatives[m
+[32m+[m[32m    )[m
+ [m
+     # Use retrieved RAG content when app.py supplies it.[m
+     # Only load local handbook files if no content was supplied.[m
+[36m@@ -622,6 +711,9 @@[m [mdef generate_reply([m
+         alternatives=alternatives[m
+     )[m
+ [m
+[32m+[m[32m    # Keep the raw model output so app.py can show it in the UI.[m
+[32m+[m[32m    last_ai_response = reply[m
+[32m+[m
+     print()[m
+     print("AI RESPONSE:")[m
+     print(reply)[m
+[36m@@ -643,6 +735,8 @@[m [mdef generate_reply([m
+ [m
+     # No second expensive generation.[m
+     # Use the deterministic safe answer immediately.[m
+[32m+[m[32m    last_ai_validation_error = error[m
+[32m+[m
+     print()[m
+     print([m
+         f"AI RESPONSE FAILED VALIDATION: {error}"[m
+[36m@@ -655,7 +749,8 @@[m [mdef generate_reply([m
+     safe_reply = fallback_reply([m
+         reasons,[m
+         pages,[m
+[31m-        alternatives[m
+[32m+[m[32m        alternatives,[m
+[32m+[m[32m        handbook_text=handbook_text[m
+     )[m
+ [m
+     return safe_reply, "SAFE"[m
+[1mdiff --git a/Task1/search.py b/Task1/search.py[m
+[1mindex 9302dac..54bd940 100644[m
+[1m--- a/Task1/search.py[m
+[1m+++ b/Task1/search.py[m
+[36m@@ -1,23 +1,30 @@[m
+[32m+[m
+ from pathlib import Path[m
+ from sentence_transformers import SentenceTransformer[m
+ import numpy as np[m
+ [m
+ [m
+[31m-# --------------------------------------------------[m
+[31m-# PATHS[m
+[31m-# --------------------------------------------------[m
+[32m+[m[32m# ==================================================[m
+[32m+[m[32m# PATH CONFIGURATION[m
+[32m+[m[32m# ==================================================[m
+ [m
+[32m+[m[32m# Get the directory where this Python file is located.[m
+ BASE_DIR = Path(__file__).resolve().parent.parent[m
+ [m
+ HANDBOOK_DIR = BASE_DIR / "data" / "handbook"[m
+ [m
+ [m
+[31m-# --------------------------------------------------[m
+[31m-# LOAD SEARCH MODEL[m
+[31m-# --------------------------------------------------[m
+[32m+[m[32m# ==================================================[m
+[32m+[m[32m# LOAD SENTENCE TRANSFORMER SEARCH MODEL[m
+[32m+[m[32m # ==================================================[m
+ [m
+ print("Loading search model...")[m
+ [m
+[32m+[m[32m# Load the BGE-small embedding model.[m
+[32m+[m[32m#[m
+[32m+[m[32m# This model converts text into numerical vectors[m
+[32m+[m[32m# called embeddings. Similar meanings produce vectors[m
+[32m+[m[32m# that are close to each other.[m
+ model = SentenceTransformer([m
+     "BAAI/bge-small-en-v1.5"[m
+ )[m
+[36m@@ -25,34 +32,59 @@[m [mmodel = SentenceTransformer([m
+ print("Search model loaded.")[m
+ [m
+ [m
+[31m-# --------------------------------------------------[m
+[32m+[m[32m# ==================================================[m
+ # READ AND CHUNK HANDBOOK FILES[m
+[31m-# --------------------------------------------------[m
+[32m+[m[32m# ==================================================[m
+ [m
+[32m+[m[32m# This list stores all searchable handbook chunks.[m
+[32m+[m[32m#[m
+[32m+[m[32m# Each item will contain:[m
+[32m+[m[32m# - filename[m
+[32m+[m[32m# - text[m
+ documents = [][m
+ [m
+[32m+[m
+ # Number of words in each searchable chunk.[m
+[31m-# Smaller chunks make retrieval more focused than[m
+[31m-# embedding one entire handbook file.[m
+[32m+[m[32m#[m
+[32m+[m[32m# We split large handbook documents into smaller pieces[m
+[32m+[m[32m# so that search can return a more specific section[m
+[32m+[m[32m# instead of returning an entire handbook file.[m
+ CHUNK_SIZE = 150[m
+ [m
+[32m+[m
+[32m+[m[32m# Find all Markdown handbook files.[m
+[32m+[m[32m#[m
+[32m+[m[32m# sorted() keeps the file processing order consistent.[m
+ for file_path in sorted(HANDBOOK_DIR.glob("*.md")):[m
+ [m
+[32m+[m[32m    # Read the complete handbook file as UTF-8 text.[m
+     text = file_path.read_text([m
+         encoding="utf-8"[m
+     ).strip()[m
+ [m
+[32m+[m[32m    # Skip empty files.[m
+     if not text:[m
+         continue[m
+ [m
+[32m+[m[32m    # Split the document into individual words.[m
+     words = text.split()[m
+ [m
+[32m+[m
+[32m+[m[32m    # Create chunks of CHUNK_SIZE words.[m
+[32m+[m[32m    #[m
+[32m+[m[32m    # Example:[m
+[32m+[m[32m    # If a file contains 450 words and CHUNK_SIZE = 150,[m
+[32m+[m[32m    # it will create 3 searchable chunks.[m
+     for start in range(0, len(words), CHUNK_SIZE):[m
+ [m
+[32m+[m[32m        # Select the current group of words[m
+[32m+[m[32m        # and combine them back into a text string.[m
+         chunk = " ".join([m
+             words[start:start + CHUNK_SIZE][m
+         ).strip()[m
+ [m
+[32m+[m
+[32m+[m[32m        # Store only non-empty chunks.[m
+         if chunk:[m
+ [m
+             documents.append({[m
+[36m@@ -61,22 +93,31 @@[m [mfor file_path in sorted(HANDBOOK_DIR.glob("*.md")):[m
+             })[m
+ [m
+ [m
+[32m+[m[32m# Display the total number of searchable chunks.[m
+ print([m
+     f"Loaded {len(documents)} handbook chunks."[m
+ )[m
+ [m
+ [m
+[31m-# --------------------------------------------------[m
+[31m-# CREATE VECTORS[m
+[31m-# --------------------------------------------------[m
+[32m+[m[32m# ==================================================[m
+[32m+[m[32m# CREATE EMBEDDINGS / VECTORS[m
+[32m+[m[32m# ==================================================[m
+ [m
+[32m+[m[32m# Check whether at least one handbook chunk exists.[m
+ if documents:[m
+ [m
+[32m+[m[32m    # Extract only the text from each document chunk.[m
+     texts = [[m
+         document["text"][m
+         for document in documents[m
+     ][m
+ [m
+[32m+[m
+[32m+[m[32m    # Convert every handbook chunk into an embedding vector.[m
+[32m+[m[32m    #[m
+[32m+[m[32m    # normalize_embeddings=True converts vectors to[m
+[32m+[m[32m    # unit length. This allows us to use a dot product[m
+[32m+[m[32m    # as cosine similarity later during search.[m
+     document_vectors = model.encode([m
+         texts,[m
+         normalize_embeddings=True[m
+[36m@@ -84,119 +125,192 @@[m [mif documents:[m
+ [m
+ else:[m
+ [m
+[32m+[m[32m    # If there are no documents, create an empty[m
+[32m+[m[32m    # NumPy array with the expected embedding size.[m
+[32m+[m[32m    #[m
+[32m+[m[32m    # BAAI/bge-small-en-v1.5 produces 384-dimensional[m
+[32m+[m[32m    # embeddings.[m
+     document_vectors = np.empty([m
+         (0, 384),[m
+         dtype=np.float32[m
+     )[m
+ [m
+ [m
+[31m-# --------------------------------------------------[m
+[31m-# SEARCH FUNCTION[m
+[31m-# --------------------------------------------------[m
+[32m+[m[32m# ==================================================[m
+[32m+[m[32m# SEMANTIC SEARCH FUNCTION[m
+[32m+[m[32m# ==================================================[m
+ [m
+ def search(question, k=3):[m
+     """[m
+     Search the handbook using semantic/vector similarity.[m
+ [m
+[31m-    Returns the best matching handbook chunks with:[m
+[31m-    - file[m
+[31m-    - text[m
+[31m-    - similarity score[m
+[32m+[m[32m    Parameters:[m
+[32m+[m[32m        question: User's question as a string.[m
+[32m+[m[32m        k: Number of top matching chunks to return.[m
+[32m+[m
+[32m+[m[32m    Returns:[m
+[32m+[m[32m        A list containing the best matching handbook[m
+[32m+[m[32m        chunks along with their similarity scores.[m
+     """[m
+ [m
+[32m+[m[32m    # If there are no handbook documents,[m
+[32m+[m[32m    # there is nothing to search.[m
+     if not documents:[m
+[31m-[m
+         return [][m
+ [m
+[31m-   question_vector = model.encode([m
+[31m-    [f"Represent this sentence for searching relevant passages: {question}"],[m
+[31m-    normalize_embeddings=True[m
+[31m-)[0][m
+ [m
+[32m+[m[32m    # Convert the user's question into an embedding.[m
+[32m+[m[32m    #[m
+[32m+[m[32m    # The prefix tells the BGE model that this text[m
+[32m+[m[32m    # is a search query and should be matched against[m
+[32m+[m[32m    # relevant passages.[m
+[32m+[m[32m    question_vector = model.encode([m
+[32m+[m[32m        [[m
+[32m+[m[32m            f"Represent this sentence for searching "[m
+[32m+[m[32m            f"relevant passages: {question}"[m
+[32m+[m[32m        ],[m
+[32m+[m[32m        normalize_embeddings=True[m
+[32m+[m[32m    )[0][m
+[32m+[m
+[32m+[m
+[32m+[m[32m    # Calculate similarity between the question vector[m
+[32m+[m[32m    # and every handbook chunk vector.[m
+[32m+[m[32m    #[m
+     # Because both vectors are normalized,[m
+[31m-    # dot product = cosine similarity.[m
+[32m+[m[32m    # their dot product is equivalent to cosine similarity.[m
+     scores = np.dot([m
+         document_vectors,[m
+         question_vector[m
+     )[m
+ [m
+[32m+[m
+[32m+[m[32m    # Sort the document indexes from highest similarity[m
+[32m+[m[32m    # score to lowest similarity score.[m
+     ranked_indexes = np.argsort([m
+         scores[m
+     )[::-1][m
+ [m
+[32m+[m
+[32m+[m[32m    # Store the final search results.[m
+     results = [][m
+ [m
+[32m+[m
+[32m+[m[32m    # Take only the top k matching documents.[m
+     for index in ranked_indexes[:k]:[m
+ [m
+         results.append({[m
+[32m+[m[32m            # Name of the handbook file.[m
+             "file": documents[index]["filename"],[m
+[32m+[m
+[32m+[m[32m            # Text of the matching handbook chunk.[m
+             "text": documents[index]["text"],[m
+[32m+[m
+[32m+[m[32m            # Similarity score rounded to 3 decimal places.[m
+             "score": round([m
+                 float(scores[index]),[m
+                 3[m
+             )[m
+         })[m
+ [m
+[32m+[m
+[32m+[m[32m    # Return the ranked search results.[m
+     return results[m
+ [m
+ [m
+[31m-# --------------------------------------------------[m
+[31m-# TEST SEARCH[m
+[31m-# --------------------------------------------------[m
+[32m+[m[32m# ==================================================[m
+[32m+[m[32m# SEARCH TESTS[m
+[32m+[m[32m# ==================================================[m
+ [m
+[32m+[m[32m# Run these tests only when this file is executed[m
+[32m+[m[32m# directly.[m
+[32m+[m[32m#[m
+[32m+[m[32m# If this file is imported by another Python file,[m
+[32m+[m[32m# the tests below will not automatically execute.[m
+ if __name__ == "__main__":[m
+ [m
+[32m+[m[32m    # Five test cases are used to verify that semantic[m
+[32m+[m[32m    # search can identify the correct handbook file.[m
+     tests = [[m
+[32m+[m
+[32m+[m[32m        # ----------------------------------------------[m
+[32m+[m[32m        # TEST 1: FEES[m
+[32m+[m[32m        # ----------------------------------------------[m
+         {[m
+             "rule": "Fees",[m
+[32m+[m
+             "question": ([m
+                 "student has unpaid fees "[m
+                 "and wants to enrol in a course"[m
+             ),[m
+[32m+[m
+             "expected": "fees.md"[m
+         },[m
+ [m
+[32m+[m
+[32m+[m[32m        # ----------------------------------------------[m
+[32m+[m[32m        # TEST 2: PREREQUISITE[m
+[32m+[m[32m        # ----------------------------------------------[m
+         {[m
+             "rule": "Prerequisite",[m
+[32m+[m
+             "question": ([m
+                 "student completed the course "[m
+                 "but the grade was below the minimum"[m
+             ),[m
+[32m+[m
+             "expected": "prerequisites.md"[m
+         },[m
+ [m
+[32m+[m
+[32m+[m[32m        # ----------------------------------------------[m
+[32m+[m[32m        # TEST 3: CAPACITY[m
+[32m+[m[32m        # ----------------------------------------------[m
+         {[m
+             "rule": "Capacity",[m
+[32m+[m
+             "question": ([m
+                 "the course is full "[m
+                 "and there are no available places"[m
+             ),[m
+[32m+[m
+             "expected": "capacity.md"[m
+         },[m
+ [m
+[32m+[m
+[32m+[m[32m        # ----------------------------------------------[m
+[32m+[m[32m        # TEST 4: TIMETABLE CLASH[m
+[32m+[m[32m        # ----------------------------------------------[m
+         {[m
+             "rule": "Clash",[m
+[32m+[m
+             "question": ([m
+                 "student's requested course "[m
+                 "overlaps with another course"[m
+             ),[m
+[32m+[m
+             "expected": "timetable.md"[m
+         },[m
+ [m
+[32m+[m
+[32m+[m[32m        # ----------------------------------------------[m
+[32m+[m[32m        # TEST 5: CREDIT LIMIT[m
+[32m+[m[32m        # ----------------------------------------------[m
+         {[m
+             "rule": "Credit",[m
+[32m+[m
+             "question": ([m
+                 "student would exceed "[m
+                 "the maximum credit limit"[m
+             ),[m
+[32m+[m
+             "expected": "credit_limit.md"[m
+         }[m
+     ][m
+ [m
+ [m
+[31m-    # --------------------------------------------------[m
+[31m-    # PRINT HEADER[m
+[31m-    # --------------------------------------------------[m
+[32m+[m[32m    # ==================================================[m
+[32m+[m[32m    # PRINT TEST HEADER[m
+[32m+[m[32m    # ==================================================[m
+ [m
+     print()[m
+     print("=" * 70)[m
+[36m@@ -204,12 +318,13 @@[m [mif __name__ == "__main__":[m
+     print("=" * 70)[m
+ [m
+ [m
+[32m+[m[32m    # Counter used to track how many tests pass.[m
+     passed = 0[m
+ [m
+ [m
+[31m-    # --------------------------------------------------[m
+[31m-    # RUN ALL FIVE TESTS[m
+[31m-    # --------------------------------------------------[m
+[32m+[m[32m    # ==================================================[m
+[32m+[m[32m    # RUN ALL TESTS[m
+[32m+[m[32m    # ==================================================[m
+ [m
+     for number, test in enumerate([m
+         tests,[m
+[36m@@ -222,60 +337,86 @@[m [mif __name__ == "__main__":[m
+         )[m
+         print("-" * 70)[m
+ [m
+[32m+[m
+[32m+[m[32m        # Display the question being tested.[m
+         print("Question:")[m
+         print(test["question"])[m
+ [m
+         print()[m
+         print("Top 3 results:")[m
+ [m
+[32m+[m
+[32m+[m[32m        # Perform semantic search using the test question.[m
+         results = search([m
+             test["question"],[m
+             k=3[m
+         )[m
+ [m
+[32m+[m
+[32m+[m[32m        # If no results were returned,[m
+[32m+[m[32m        # mark the test as failed.[m
+         if not results:[m
+ [m
+             print("No handbook results found.")[m
+             print("RESULT: FAIL")[m
+[32m+[m
+             continue[m
+ [m
+[32m+[m
+[32m+[m[32m        # ==================================================[m
+[32m+[m[32m        # DISPLAY SEARCH RESULTS[m
+[32m+[m[32m        # ==================================================[m
+[32m+[m
+[32m+[m[32m        # Print each of the top 3 search results.[m
+         for position, result in enumerate([m
+             results,[m
+             start=1[m
+         ):[m
+ [m
+[32m+[m[32m            # Display ranking, filename,[m
+[32m+[m[32m            # and similarity score.[m
+             print([m
+                 f"{position}. "[m
+                 f"{result['file']} "[m
+                 f"{result['score']}"[m
+             )[m
+ [m
+[32m+[m[32m            # Display the first 200 characters of[m
+[32m+[m[32m            # the matching handbook text.[m
+             print([m
+                 f"   Text: {result['text'][:200]}..."[m
+             )[m
+ [m
+ [m
+[31m-        # --------------------------------------------------[m
+[31m-        # CHECK WHETHER CORRECT FILE IS FIRST[m
+[31m-        # --------------------------------------------------[m
+[32m+[m[32m        # ==================================================[m
+[32m+[m[32m        # VERIFY TOP RESULT[m
+[32m+[m[32m        # ==================================================[m
+ [m
+[32m+[m[32m        # The first result is considered the best match[m
+[32m+[m[32m        # because it has the highest similarity score.[m
+         first_file = results[0]["file"][m
+ [m
+[32m+[m
+         print()[m
+ [m
+[32m+[m[32m        # Display what file we expected to be ranked first.[m
+         print([m
+             f"Expected first: {test['expected']}"[m
+         )[m
+ [m
+[32m+[m[32m        # Display the file actually ranked first.[m
+         print([m
+             f"Actual first:   {first_file}"[m
+         )[m
+ [m
+ [m
+[32m+[m[32m        # Check whether the highest-ranked file[m
+[32m+[m[32m        # matches the expected handbook file.[m
+         if first_file == test["expected"]:[m
+ [m
+             print("RESULT: PASS")[m
+ [m
+[32m+[m[32m            # Increase the successful test counter.[m
+             passed += 1[m
+ [m
+         else:[m
+[36m@@ -288,19 +429,23 @@[m [mif __name__ == "__main__":[m
+             )[m
+ [m
+ [m
+[31m-    # --------------------------------------------------[m
+[31m-    # FINAL SUMMARY[m
+[31m-    # --------------------------------------------------[m
+[32m+[m[32m    # ==================================================[m
+[32m+[m[32m    # FINAL TEST SUMMARY[m
+[32m+[m[32m    # ==================================================[m
+ [m
+     print()[m
+     print("=" * 70)[m
+     print("TASK 7 FINAL SUMMARY")[m
+     print("=" * 70)[m
+ [m
+[32m+[m
+[32m+[m[32m    # Display the total number of passed tests.[m
+     print([m
+         f"Passed: {passed}/{len(tests)}"[m
+     )[m
+ [m
+[32m+[m
+[32m+[m[32m    # Check whether every test passed.[m
+     if passed == len(tests):[m
+ [m
+         print([m
+[36m@@ -314,4 +459,6 @@[m [mif __name__ == "__main__":[m
+             "chunks, or handbook content."[m
+         )[m
+ [m
+[32m+[m
+     print("=" * 70)[m
+[41m+[m
+[1mdiff --git a/Task1/style.css b/Task1/style.css[m
+[1mindex 73eadad..f8875d2 100644[m
+[1m--- a/Task1/style.css[m
+[1m+++ b/Task1/style.css[m
+[36m@@ -1,4 +1,7 @@[m
+[31m-/* Student-facing handbook text */[m
+[32m+[m[32m/* --------------------------------------------------[m
+[32m+[m[32m   HANDBOOK CONTENT[m
+[32m+[m[32m-------------------------------------------------- */[m
+[32m+[m
+ .handbook-text {[m
+     font-size: 13px !important;[m
+     line-height: 1.45 !important;[m
+[36m@@ -8,17 +11,7 @@[m
+     margin: 4px 0 12px 0 !important;[m
+ }[m
+ [m
+[31m-/* Keep handbook filename/score slightly smaller than headings */[m
+[31m-.handbook-text + * {[m
+[31m-    font-size: 13px !important;[m
+[31m-}[m
+[31m-[m
+[31m-/* Make Streamlit caption text compact */[m
+[31m-[data-testid="stCaptionContainer"] {[m
+[31m-    font-size: 12px !important;[m
+[31m-}[m
+[31m-[m
+[31m-/* Avoid oversized markdown headings inside handbook content */[m
+[32m+[m[32m/* Compact handbook headings and paragraphs */[m
+ .handbook-text h1,[m
+ .handbook-text h2,[m
+ .handbook-text h3,[m
+[36m@@ -30,4 +23,18 @@[m
+     line-height: 1.45 !important;[m
+     margin: 0 0 6px 0 !important;[m
+     font-weight: 400 !important;[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m/* Compact caption / score text */[m
+[32m+[m[32m[data-testid="stCaptionContainer"] {[m
+[32m+[m[32m    font-size: 12px !important;[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m/* Scrollable handbook area */[m
+[32m+[m[32m.handbook-scroll {[m
+[32m+[m[32m    max-height: 220px;[m
+[32m+[m[32m    overflow-y: auto;[m
+[32m+[m[32m    padding: 10px;[m
+[32m+[m[32m    margin-top: 6px;[m
+[32m+[m[32m    border-radius: 8px;[m
+ }[m
+\ No newline at end of file[m
+[1mdiff --git a/data/requests/R1.json b/data/requests/R1.json[m
+[1mindex 5d09e96..b72c08d 100644[m
+[1m--- a/data/requests/R1.json[m
+[1m+++ b/data/requests/R1.json[m
+[36m@@ -2,4 +2,5 @@[m
+   "request": "R1",[m
+   "student_id": "S-104",[m
+   "message": "I want to take Algorithms this term."[m
+[32m+[m[41m  [m
+ }[m
+\ No newline at end of file[m

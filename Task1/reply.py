@@ -18,15 +18,37 @@ MODEL_NAME = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
 # 2. LOAD AI MODEL
 # ============================================================
 
-print("Loading reply model...")
+# Load the model only when it is first needed.
+# This avoids loading the 1.7B model during Streamlit import/startup.
+tokenizer = None
+model = None
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+# Latest AI draft and validation error, exposed to app.py for UI display.
+last_ai_response = ""
+last_ai_validation_error = ""
 
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME
-)
 
-print("Reply model loaded.")
+def load_reply_model():
+    """Load the reply model once, on first use."""
+
+    global tokenizer, model
+
+    if tokenizer is not None and model is not None:
+        return
+
+    print("Loading reply model...")
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        MODEL_NAME
+    )
+
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME
+    )
+
+    model.eval()
+
+    print("Reply model loaded.")
 
 
 # ============================================================
@@ -152,6 +174,7 @@ def check_numbers_and_codes(
     return True, ""
 
 
+
 def check_waiver_safety(reply):
 
     reply_lower = reply.lower()
@@ -236,6 +259,48 @@ def needs_alternative(reasons):
     )
 
 
+def normalize_alternatives(alternatives):
+    """
+    Convert alternatives to:
+        [("CS101", "Programming Foundations"), ...]
+
+    Supports both:
+        {"course_code": "CS101", "title": "Programming Foundations"}
+    and:
+        ("CS101", "Programming Foundations")
+    """
+
+    normalized = []
+
+    for alternative in alternatives or []:
+
+        if isinstance(alternative, dict):
+
+            code = str(
+                alternative.get("course_code", "")
+            ).strip()
+
+            title = str(
+                alternative.get("title", "")
+            ).strip()
+
+            if code and title:
+                normalized.append((code, title))
+
+        elif (
+            isinstance(alternative, (tuple, list))
+            and len(alternative) >= 2
+        ):
+
+            code = str(alternative[0]).strip()
+            title = str(alternative[1]).strip()
+
+            if code and title:
+                normalized.append((code, title))
+
+    return normalized
+
+
 # ============================================================
 # 5. SAFE FALLBACK
 # ============================================================
@@ -243,7 +308,8 @@ def needs_alternative(reasons):
 def fallback_reply(
     reasons,
     handbook_files,
-    alternatives
+    alternatives,
+    handbook_text=None
 ):
     """
     Deterministic answer used when the local AI output
@@ -254,7 +320,9 @@ def fallback_reply(
 
     reasons = reasons or []
     handbook_files = handbook_files or []
-    alternatives = alternatives or []
+    alternatives = normalize_alternatives(
+        alternatives
+    )
 
     if reasons:
 
@@ -286,6 +354,9 @@ def fallback_reply(
             "\n\nRelevant handbook page(s):\n"
             f"{page_lines}"
         )
+
+    # Keep the final student reply concise.
+    # Retrieved handbook text is displayed separately by app.py.
 
     if (
         reasons
@@ -368,10 +439,14 @@ def ask_ai(
     uses the safe deterministic response instead of making
     another slow model call.
     """
+    load_reply_model()
+
 
     reasons = reasons or []
     handbook_files = handbook_files or []
-    alternatives = alternatives or []
+    alternatives = normalize_alternatives(
+        alternatives
+    )
 
     reasons_text = "\n".join(
         f"- {reason}"
@@ -405,8 +480,10 @@ Do NOT make a new decision.
 Write only a short student-facing reply.
 
 STRICT RULES:
-- Copy every Python reason EXACTLY.
-- Do not paraphrase or shorten Python reasons.
+- Copy every Python reason EXACTLY as written.
+- Each Python reason must appear as a complete line in the final reply.
+- Do not paraphrase, rewrite, shorten, or reinterpret any Python reason.
+- Never replace a course code inside a reason with a course name or another word.
 - Mention every supplied handbook filename EXACTLY.
 - Use the handbook content only as supporting guidance.
 - Do not invent facts, numbers, dates, or course codes.
@@ -491,6 +568,10 @@ def validate_reply(
     handbook_text,
     alternatives
 ):
+
+    alternatives = normalize_alternatives(
+        alternatives
+    )
 
     valid, error = check_reasons(
         reply,
@@ -581,6 +662,12 @@ def generate_reply(
         "SAFE"
     """
 
+    global last_ai_response, last_ai_validation_error
+
+    # Reset debug values for this request.
+    last_ai_response = ""
+    last_ai_validation_error = ""
+
     # Correct alias handling.
     if handbook is None:
         handbook = handbook_content
@@ -590,7 +677,9 @@ def generate_reply(
 
     reasons = reasons or []
     pages = pages or []
-    alternatives = alternatives or []
+    alternatives = normalize_alternatives(
+        alternatives
+    )
 
     # Use retrieved RAG content when app.py supplies it.
     # Only load local handbook files if no content was supplied.
@@ -622,6 +711,9 @@ def generate_reply(
         alternatives=alternatives
     )
 
+    # Keep the raw model output so app.py can show it in the UI.
+    last_ai_response = reply
+
     print()
     print("AI RESPONSE:")
     print(reply)
@@ -643,6 +735,8 @@ def generate_reply(
 
     # No second expensive generation.
     # Use the deterministic safe answer immediately.
+    last_ai_validation_error = error
+
     print()
     print(
         f"AI RESPONSE FAILED VALIDATION: {error}"
@@ -655,7 +749,8 @@ def generate_reply(
     safe_reply = fallback_reply(
         reasons,
         pages,
-        alternatives
+        alternatives,
+        handbook_text=handbook_text
     )
 
     return safe_reply, "SAFE"

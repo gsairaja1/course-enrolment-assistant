@@ -1,4 +1,7 @@
-/* Student-facing handbook text */
+/* --------------------------------------------------
+   HANDBOOK CONTENT
+-------------------------------------------------- */
+
 .handbook-text {
     font-size: 13px !important;
     line-height: 1.45 !important;
@@ -8,17 +11,7 @@
     margin: 4px 0 12px 0 !important;
 }
 
-/* Keep handbook filename/score slightly smaller than headings */
-.handbook-text + * {
-    font-size: 13px !important;
-}
-
-/* Make Streamlit caption text compact */
-[data-testid="stCaptionContainer"] {
-    font-size: 12px !important;
-}
-
-/* Avoid oversized markdown headings inside handbook content */
+/* Compact handbook headings and paragraphs */
 .handbook-text h1,
 .handbook-text h2,
 .handbook-text h3,
@@ -30,4 +23,18 @@
     line-height: 1.45 !important;
     margin: 0 0 6px 0 !important;
     font-weight: 400 !important;
+}
+
+/* Compact caption / score text */
+[data-testid="stCaptionContainer"] {
+    font-size: 12px !important;
+}
+
+/* Scrollable handbook area */
+.handbook-scroll {
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 10px;
+    margin-top: 6px;
+    border-radius: 8px;
 }

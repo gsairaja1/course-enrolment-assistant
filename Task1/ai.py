@@ -2,171 +2,165 @@ from pathlib import Path
 import json
 import re
 
-from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 
 # ============================================================
-# TASK 8 - AI COURSE IDENTIFICATION
-# ============================================================
-#
-# Purpose:
-# Convert a student's natural-language message into
-# one valid course code.
-#
-# Python provides:
-#   1. Student message
-#   2. Seven real course codes and titles
-#
-# AI provides:
-#   course_code only
-#
-# Python then validates the AI result.
-#
-# ============================================================
-
-
-# ------------------------------------------------------------
 # 1. PROJECT PATH
-# ------------------------------------------------------------
+# ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-DATA_DIR = BASE_DIR / "data"
-COURSES_FILE = DATA_DIR / "courses.csv"
+
+# ============================================================
+# 2. GENERATIVE LLM
+# ============================================================
+
+MODEL_NAME = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
+
+print("Loading course identification LLM...")
+
+tokenizer = AutoTokenizer.from_pretrained(
+    MODEL_NAME
+)
+
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_NAME
+)
+
+print("Course identification LLM loaded.")
 
 
-# ------------------------------------------------------------
-# 2. REAL COURSE LIST
-# ------------------------------------------------------------
+# ============================================================
+# 3. REAL COURSE DATA
+# ============================================================
 
-REAL_COURSES = [
-    {
-        "course_code": "CS101",
-        "title": "Programming Foundations"
-    },
-    {
-        "course_code": "CS201",
-        "title": "Algorithms"
-    },
-    {
-        "course_code": "CS202",
-        "title": "Databases"
-    },
-    {
-        "course_code": "CS301",
-        "title": "Machine Learning"
-    },
-    {
-        "course_code": "CS310",
-        "title": "Distributed Systems"
-    },
-    {
-        "course_code": "DS220",
-        "title": "Data Visualisation"
-    },
-    {
-        "course_code": "MA150",
-        "title": "Statistics"
-    }
-]
+REAL_COURSES = {
+    "CS101": "Programming Foundations",
+    "CS201": "Algorithms",
+    "CS202": "Databases",
+    "CS301": "Machine Learning",
+    "CS310": "Distributed Systems",
+    "DS220": "Data Visualisation",
+    "MA150": "Statistics",
+}
+
+REAL_COURSE_CODES = set(
+    REAL_COURSES.keys()
+)
 
 
-REAL_COURSE_CODES = {
-    course["course_code"]
-    for course in REAL_COURSES
+# ============================================================
+# 4. COURSE ALIASES
+# ============================================================
+
+COURSE_ALIASES = {
+
+    # Machine Learning
+    "ml": "CS301",
+    "machine learning": "CS301",
+
+    # Algorithms
+    "algorithms": "CS201",
+    "algorithm": "CS201",
+
+    # Databases
+    "databases": "CS202",
+    "database": "CS202",
+
+    # Distributed Systems
+    "distributed systems": "CS310",
+    "distributed system": "CS310",
+
+    # Data Visualisation
+    "data visualisation": "DS220",
+    "data visualization": "DS220",
+
+    # Programming Foundations
+    "programming foundations": "CS101",
+
+    # Statistics
+    "statistics": "MA150",
 }
 
 
-# ------------------------------------------------------------
-# 3. LOAD AI MODEL ONCE
-# ------------------------------------------------------------
+# ============================================================
+# 5. DIRECT COURSE MATCH
+# ============================================================
 
-print("Loading AI model...")
-
-
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-
-
-try:
-
-    model = SentenceTransformer(MODEL_NAME)
-
-except Exception as error:
-
-    print("ERROR: Could not load the AI model.")
-    print(error)
-    raise
-
-
-print("AI model loaded.")
-
-
-# ------------------------------------------------------------
-# 4. COURSE LIST FOR THE AI
-# ------------------------------------------------------------
-
-def build_course_list():
+def direct_course_match(message):
     """
-    Create the course list that is supplied to the AI.
+    Try to find a course directly from the student's message.
+
+    Checks:
+    1. Course code
+    2. Exact course title
+    3. Alias
     """
 
-    lines = []
+    text = message.lower().strip()
 
-    for course in REAL_COURSES:
+    # --------------------------------------------------------
+    # 5.1 CHECK COURSE CODE
+    # --------------------------------------------------------
 
-        lines.append(
-            f"{course['course_code']} - {course['title']}"
-        )
+    for code in REAL_COURSE_CODES:
 
-    return "\n".join(lines)
+        if re.search(
+            rf"\b{re.escape(code.lower())}\b",
+            text
+        ):
+            return code
 
+    # --------------------------------------------------------
+    # 5.2 CHECK FULL COURSE TITLE
+    # --------------------------------------------------------
 
-COURSE_LIST = build_course_list()
+    for code, title in REAL_COURSES.items():
 
+        if title.lower() in text:
+            return code
 
-# ------------------------------------------------------------
-# 5. SIMPLE TITLE MATCH
-# ------------------------------------------------------------
+    # --------------------------------------------------------
+    # 5.3 CHECK COURSE ALIAS
+    # --------------------------------------------------------
 
-def dictionary_course_match(message):
-    """
-    Try to identify a course directly from its title.
+    for alias in sorted(
+        COURSE_ALIASES,
+        key=len,
+        reverse=True
+    ):
 
-    This is not the main AI method.
-    It simply handles obvious cases safely.
-    """
+        if re.search(
+            rf"\b{re.escape(alias)}\b",
+            text
+        ):
+            return COURSE_ALIASES[alias]
 
-    message_lower = message.lower()
-
-    matches = []
-
-    for course in REAL_COURSES:
-
-        title = course["title"].lower()
-
-        if title in message_lower:
-            matches.append(course["course_code"])
-
-    if len(matches) == 1:
-
-        return matches[0]
-
+    # Nothing found
     return None
 
 
-# ------------------------------------------------------------
-# 6. AI COURSE IDENTIFICATION
-# ------------------------------------------------------------
+# ============================================================
+# 6. CREATE COURSE LIST FOR THE LLM
+# ============================================================
 
-def ask_ai_for_course(message):
+COURSE_LIST = "\n".join(
+    f"{code} - {title}"
+    for code, title in REAL_COURSES.items()
+)
+
+
+# ============================================================
+# 7. ASK THE LLM TO IDENTIFY THE COURSE
+# ============================================================
+
+def ask_llm_for_course(message):
     """
-    Ask the AI to identify the course.
+    Ask SmolLM2 to identify the course.
 
-    The AI receives:
-        - student's message
-        - seven real course codes and titles
-
-    It must return JSON only.
+    The model is allowed to return null when
+    the course cannot be identified confidently.
     """
 
     prompt = f"""
@@ -175,61 +169,118 @@ You are a course identification assistant.
 Your ONLY job is to identify which course the student
 is asking about.
 
+Do NOT answer the student's question.
+Do NOT explain.
+Do NOT make an enrolment decision.
+
 Student message:
 {message}
 
-These are the ONLY valid courses:
-
+Valid courses:
 {COURSE_LIST}
 
-Return JSON and nothing else.
+Rules:
 
-Required format:
+1. Choose ONLY from the valid courses listed above.
+2. Understand indirect descriptions of courses.
+3. If the student clearly describes a course, return its course code.
+4. If the student does not clearly identify a course,
+   return null.
+5. Do NOT guess.
+6. Do NOT invent a course code.
+7. Return JSON only.
+
+Examples:
+
+"Can I take ML?"
+-> {{"course_code": "CS301"}}
+
+"I want to learn predictive models"
+-> {{"course_code": "CS301"}}
+
+"I want to learn how databases store information"
+-> {{"course_code": "CS202"}}
+
+"I want to study algorithms"
+-> {{"course_code": "CS201"}}
+
+"I want to learn basic programming"
+-> {{"course_code": "CS101"}}
+
+"I want to understand systems running across multiple computers"
+-> {{"course_code": "CS310"}}
+
+"I want to create charts and understand data visually"
+-> {{"course_code": "DS220"}}
+
+"I want to study probability and statistics"
+-> {{"course_code": "MA150"}}
+
+"Tell me something interesting"
+-> {{"course_code": null}}
+
+"What courses are available?"
+-> {{"course_code": null}}
+
+"I need help with my enrolment"
+-> {{"course_code": null}}
+
+Return exactly this format:
+
 {{"course_code": "CS301"}}
 
-The course_code MUST be one of the seven valid course codes.
-Do not invent a course code.
-Do not explain your answer.
-Do not add any text outside the JSON.
+OR
+
+{{"course_code": null}}
 """.strip()
 
+    messages = [
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ]
 
-    try:
+    formatted_prompt = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+    )
 
-        # SentenceTransformer is primarily an embedding model,
-        # so it does not generate text responses.
-        #
-        # For Task 8 we therefore use the local title matching
-        # first, and this function safely returns None if a
-        # generative response is unavailable.
+    inputs = tokenizer(
+        formatted_prompt,
+        return_tensors="pt"
+    )
 
-        return None
+    print("Asking course identification LLM...")
 
-    except Exception as error:
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=50,
+        do_sample=False
+    )
 
-        print(f"AI request failed: {error}")
+    # Remove original prompt tokens
+    new_tokens = outputs[0][
+        inputs["input_ids"].shape[1]:
+    ]
 
-        return None
+    response = tokenizer.decode(
+        new_tokens,
+        skip_special_tokens=True
+    ).strip()
+
+    print("Course identification response:")
+    print(response)
+
+    return response
 
 
-# ------------------------------------------------------------
-# 7. EXTRACT JSON
-# ------------------------------------------------------------
+# ============================================================
+# 8. EXTRACT JSON FROM LLM RESPONSE
+# ============================================================
 
 def extract_json(text):
-    """
-    Extract JSON from the first '{' to the last '}'.
-
-    Example:
-
-        Some text
-        {"course_code": "CS301"}
-        More text
-
-    becomes:
-
-        {"course_code": "CS301"}
-    """
 
     if not text:
         return None
@@ -240,70 +291,102 @@ def extract_json(text):
     if start == -1 or end == -1:
         return None
 
-    if end <= start:
-        return None
-
-    json_text = text[start:end + 1]
-
     try:
 
-        return json.loads(json_text)
+        json_text = text[
+            start:end + 1
+        ]
+
+        return json.loads(
+            json_text
+        )
 
     except json.JSONDecodeError:
 
         return None
 
 
-# ------------------------------------------------------------
-# 8. VALIDATE COURSE CODE
-# ------------------------------------------------------------
+# ============================================================
+# 9. VALIDATE COURSE CODE
+# ============================================================
 
 def validate_course_code(data):
     """
-    Check that the AI returned a real course code.
+    Validate the LLM output.
+
+    Returns:
+        Valid course code
+        OR
+        None when no valid course was identified.
     """
 
+    # Output must be a dictionary
     if not isinstance(data, dict):
         return None
 
-    course_code = data.get("course_code")
+    # Get course_code
+    code = data.get("course_code")
 
-    if not isinstance(course_code, str):
+    # --------------------------------------------------------
+    # IMPORTANT:
+    # null means:
+    # "The LLM could not confidently identify a course."
+    # --------------------------------------------------------
+
+    if code is None:
         return None
 
-    course_code = course_code.strip().upper()
-
-    if course_code not in REAL_COURSE_CODES:
+    # Course code must be a string
+    if not isinstance(code, str):
         return None
 
-    return course_code
+    # Clean the code
+    code = code.strip().upper()
+
+    # Check against real courses
+    if code not in REAL_COURSE_CODES:
+        return None
+
+    return code
 
 
-# ------------------------------------------------------------
-# 9. IDENTIFY COURSE
-# ------------------------------------------------------------
+# ============================================================
+# 10. MAIN COURSE IDENTIFICATION FUNCTION
+# ============================================================
 
 def identify_course(message):
     """
-    Identify a course from the student's message.
+    Convert a natural-language student message
+    into a valid course code.
 
-    Process:
+    Flow:
 
-        1. Try direct title matching.
-        2. Otherwise ask the AI.
-        3. Extract JSON.
-        4. Validate course code.
-        5. Retry once if necessary.
-        6. Stop safely if still invalid.
+        Student message
+              ↓
+        Direct matching
+              ↓
+        If not found
+              ↓
+            LLM
+              ↓
+        Extract JSON
+              ↓
+        Validate code
+              ↓
+        Return course
     """
 
+    # --------------------------------------------------------
+    # STEP 1: Validate input
+    # --------------------------------------------------------
+
     if not isinstance(message, str):
+
         return {
             "success": False,
             "course_code": None,
-            "message": "Invalid student message."
+            "course_title": None
         }
-
 
     message = message.strip()
 
@@ -312,323 +395,73 @@ def identify_course(message):
         return {
             "success": False,
             "course_code": None,
-            "message": "Student message is empty."
+            "course_title": None
         }
 
-
     # --------------------------------------------------------
-    # FIRST: DIRECT TITLE MATCH
+    # STEP 2: DIRECT MATCHING
     # --------------------------------------------------------
 
-    direct_match = dictionary_course_match(message)
+    code = direct_course_match(message)
 
-    if direct_match:
+    if code:
 
         return {
             "success": True,
-            "course_code": direct_match,
-            "message": "Course identified successfully."
+            "course_code": code,
+            "course_title": REAL_COURSES[code]
         }
 
-
     # --------------------------------------------------------
-    # SECOND: AI ATTEMPT
-    # --------------------------------------------------------
-
-    ai_text = ask_ai_for_course(message)
-
-    parsed = extract_json(ai_text)
-
-    course_code = validate_course_code(parsed)
-
-    if course_code:
-
-        return {
-            "success": True,
-            "course_code": course_code,
-            "message": "Course identified successfully."
-        }
-
-
-    # --------------------------------------------------------
-    # THIRD: ONE RETRY
+    # STEP 3: LLM FALLBACK
     # --------------------------------------------------------
 
-    ai_text = ask_ai_for_course(message)
+    try:
 
-    parsed = extract_json(ai_text)
+        llm_response = ask_llm_for_course(
+            message
+        )
 
-    course_code = validate_course_code(parsed)
+        # ----------------------------------------------------
+        # STEP 4: EXTRACT JSON
+        # ----------------------------------------------------
 
-    if course_code:
+        parsed = extract_json(
+            llm_response
+        )
 
-        return {
-            "success": True,
-            "course_code": course_code,
-            "message": "Course identified successfully."
-        }
+        # ----------------------------------------------------
+        # STEP 5: VALIDATE COURSE
+        # ----------------------------------------------------
 
+        code = validate_course_code(
+            parsed
+        )
+
+        # ----------------------------------------------------
+        # STEP 6: VALID COURSE FOUND
+        # ----------------------------------------------------
+
+        if code:
+
+            return {
+                "success": True,
+                "course_code": code,
+                "course_title": REAL_COURSES[code]
+            }
+
+    except Exception as error:
+
+        print(
+            f"Course LLM failed: {error}"
+        )
 
     # --------------------------------------------------------
-    # FAILED
+    # STEP 7: COURSE NOT IDENTIFIED
     # --------------------------------------------------------
-
-    valid_codes = ", ".join(
-        sorted(REAL_COURSE_CODES)
-    )
 
     return {
         "success": False,
         "course_code": None,
-        "message": (
-            "I could not identify a valid course. "
-            f"The seven real course codes are: {valid_codes}"
-        )
+        "course_title": None
     }
-
-
-# ------------------------------------------------------------
-# 10. TASK 8 TEST DATA
-# ------------------------------------------------------------
-
-TESTS = [
-    {
-        "request": "R1",
-        "student_id": "S-104",
-        "message": "I want to take Algorithms this term.",
-        "expected": "CS201"
-    },
-    {
-        "request": "R2",
-        "student_id": "S-101",
-        "message": "Can I add Distributed Systems?",
-        "expected": "CS310"
-    },
-    {
-        "request": "R3",
-        "student_id": "S-103",
-        "message": "I would like to join Databases please.",
-        "expected": "CS202"
-    },
-    {
-        "request": "R4",
-        "student_id": "S-102",
-        "message": (
-            "Trying to sign up for Machine Learning "
-            "and it will not let me."
-        ),
-        "expected": "CS301"
-    },
-    {
-        "request": "R5",
-        "student_id": "S-105",
-        "message": (
-            "Machine Learning please, "
-            "I have done everything it asks for."
-        ),
-        "expected": "CS301"
-    },
-    {
-        "request": "R6",
-        "student_id": "S-106",
-        "message": "Could I take Data Visualisation?",
-        "expected": "DS220"
-    }
-]
-
-
-# ------------------------------------------------------------
-# 11. PRINT TEST HEADER
-# ------------------------------------------------------------
-
-def print_header(title):
-
-    print()
-    print("=" * 70)
-    print(title)
-    print("=" * 70)
-
-
-# ------------------------------------------------------------
-# 12. RUN TASK 8 TESTS
-# ------------------------------------------------------------
-
-def run_tests():
-
-    print_header(
-        "TASK 8 - AI COURSE IDENTIFICATION"
-    )
-
-    passed = 0
-
-
-    # --------------------------------------------------------
-    # SIX REAL REQUESTS
-    # --------------------------------------------------------
-
-    for test in TESTS:
-
-        print()
-        print("=" * 70)
-        print(f"TESTING {test['request']}")
-        print("=" * 70)
-
-        print()
-        print("Student ID:")
-        print(test["student_id"])
-
-        print()
-        print("Student message:")
-        print(test["message"])
-
-        print()
-        print("Expected course code:")
-        print(test["expected"])
-
-
-        result = identify_course(
-            test["message"]
-        )
-
-
-        print()
-        print("Result:")
-        print(result)
-
-
-        if (
-            result["success"]
-            and result["course_code"]
-            == test["expected"]
-        ):
-
-            print()
-            print("RESULT: PASS")
-
-            passed += 1
-
-        else:
-
-            print()
-            print("RESULT: FAIL")
-
-
-    # --------------------------------------------------------
-    # FAKE COURSE CODE TEST
-    # --------------------------------------------------------
-
-    print()
-    print("=" * 70)
-    print("TEST 7 - FAKE COURSE CODE")
-    print("=" * 70)
-
-    fake_code = "CS999"
-
-    print()
-    print("Fake course code:")
-    print(fake_code)
-
-
-    fake_result = validate_course_code(
-        {
-            "course_code": fake_code
-        }
-    )
-
-
-    if fake_result is None:
-
-        print()
-        print("RESULT: PASS")
-        print("Fake course code was correctly rejected.")
-
-    else:
-
-        print()
-        print("RESULT: FAIL")
-
-
-    # --------------------------------------------------------
-    # NO JSON TEST
-    # --------------------------------------------------------
-
-    print()
-    print("=" * 70)
-    print("TEST 8 - NO JSON RESPONSE")
-    print("=" * 70)
-
-
-    fake_ai_response = (
-        "I cannot determine the course."
-    )
-
-
-    print()
-    print("Fake AI response:")
-    print(fake_ai_response)
-
-
-    no_json_result = extract_json(
-        fake_ai_response
-    )
-
-
-    if no_json_result is None:
-
-        print()
-        print("RESULT: PASS")
-        print("No JSON was found.")
-        print("Program did not crash.")
-
-    else:
-
-        print()
-        print("RESULT: FAIL")
-
-
-    # --------------------------------------------------------
-    # FINAL SUMMARY
-    # --------------------------------------------------------
-
-    print_header(
-        "TASK 8 FINAL SUMMARY"
-    )
-
-    print(
-        f"Six requests passed: "
-        f"{passed}/{len(TESTS)}"
-    )
-
-    print(
-        "Fake course code test: PASSED"
-    )
-
-    print(
-        "No JSON test: PASSED"
-    )
-
-    print()
-    print("=" * 70)
-
-    if passed == len(TESTS):
-
-        print(
-            "TASK 8: ALL TESTS PASSED"
-        )
-
-    else:
-
-        print(
-            "TASK 8: SOME REQUESTS FAILED"
-        )
-
-    print("=" * 70)
-
-
-# ------------------------------------------------------------
-# 13. PROGRAM START
-# ------------------------------------------------------------
-
-if __name__ == "__main__":
-
-    run_tests()

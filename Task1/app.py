@@ -1,7 +1,13 @@
+# Path helps us work with files/folders safely across operating systems.
 from pathlib import Path
+
+# re is used for pattern matching, such as finding course codes/numbers in text.
 import re
 
+# requests lets the Streamlit app communicate with the FastAPI backend.
 import requests
+
+# Streamlit creates the web interface for the Course Enrolment Assistant.
 import streamlit as st
 
 
@@ -9,16 +15,22 @@ import streamlit as st
 # OPTIONAL PROJECT MODULES
 # ============================================================
 
+# Try to connect app.py with ai.py.
+# If ai.py is unavailable, the app continues with a simple fallback.
 try:
     from ai import identify_course as ai_identify_course
 except Exception:
     ai_identify_course = None
 
+# Connect app.py with reply.py, which generates the final student response.
 try:
-    from reply import generate_reply as ai_generate_reply 
+    import reply as reply_module
+    from reply import generate_reply as ai_generate_reply
 except Exception:
+    reply_module = None
     ai_generate_reply = None
 
+# Connect app.py with search.py, which performs handbook/vector search.
 try:
     from search import search as handbook_search
 except Exception:
@@ -40,6 +52,7 @@ st.set_page_config(
 # CUSTOM CSS
 # ============================================================
 
+# Locate style.css in the same folder as this Python file.
 CSS_FILE = Path(__file__).resolve().parent / "style.css"
 
 if CSS_FILE.exists():
@@ -59,6 +72,7 @@ PROJECT_DIR = BASE_DIR.parent
 DATA_DIR = PROJECT_DIR / "data"
 HANDBOOK_DIR = DATA_DIR / "handbook"
 
+# FastAPI runs locally on port 8000; Streamlit sends enrolment requests here.
 API_URL = "http://127.0.0.1:8000"
 
 
@@ -171,10 +185,12 @@ TASK10_REQUESTS = [
 # FASTAPI HELPER
 # ============================================================
 
+# Central helper used whenever this Streamlit app needs data from FastAPI.
 def api_get(endpoint):
     """Call the FastAPI backend safely."""
 
     try:
+        # Build the complete backend URL and send a GET request.
         response = requests.get(
             f"{API_URL}{endpoint}",
             timeout=30,
@@ -209,80 +225,54 @@ def api_get(endpoint):
 # ============================================================
 # COURSE IDENTIFICATION
 # ============================================================
-
-def identify_course_fallback(message):
-    """Simple non-AI course-identification fallback."""
-
-    text = message.lower()
-
-    for code in COURSES:
-        if re.search(
-            rf"\b{re.escape(code.lower())}\b",
-            text,
-        ):
-            return code
-
-    for code, title in COURSES.items():
-        if title.lower() in text:
-            return code
-
-    aliases = {
-        "algorithms": "CS201",
-        "programming foundations": "CS101",
-        "databases": "CS202",
-        "machine learning": "CS301",
-        "distributed systems": "CS310",
-        "data visualisation": "DS220",
-        "data visualization": "DS220",
-        "statistics": "MA150",
-    }
-
-    for phrase, code in aliases.items():
-        if phrase in text:
-            return code
-
-    return None
-
-
+# Convert the student's natural-language question into a known course code.
 def identify_course(message):
-    """Use AI course identification, then fall back safely."""
+    """Use ai.py to identify the course."""
 
     if ai_identify_course is not None:
 
         try:
-            result = ai_identify_course(
-                message,
-                list(COURSES.items()),
-            )
+            # ai.py accepts only the student message
+            # ai.py receives only the student's message and tries to identify the course.
+            result = ai_identify_course(message)
 
+            # ai.py returns a dictionary
             if isinstance(result, dict):
 
-                code = result.get(
-                    "course_code"
-                )
+                code = result.get("course_code")
+
+                if code:
+                    code = code.strip().upper()
+
+                # Only accept a course code that actually exists in our COURSE dictionary.
+                if code in COURSES:
+                    return code
+
+            # Support a plain string course code too
+            if isinstance(result, str):
+
+                code = result.strip().upper()
 
                 if code in COURSES:
                     return code
 
-            if isinstance(result, str):
-
-                if result in COURSES:
-                    return result
-
         except Exception as error:
+
             print(
                 f"Course AI failed: {error}"
             )
 
-    return identify_course_fallback(
-        message
-    )
+    # Only use this if ai.py cannot identify the course
+    # Fallback: if AI cannot identify the course, look for an exact course code.
+    for code in COURSES:
 
-
+        if code in message.upper():
+            return code
 # ============================================================
 # VECTOR / RAG HANDBOOK RETRIEVAL
 # ============================================================
 
+# Retrieve relevant handbook chunks using the vector/RAG search module.
 def retrieve_handbook(
     question,
     reasons,
@@ -308,6 +298,8 @@ def retrieve_handbook(
         reasons or []
     )
 
+    # Combine the student's question with trusted Python rule results.
+    # This gives the vector search both the user's intent and the verified problem.
     retrieval_query = (
         f"{question}\n"
         f"Verified enrolment reasons: {reason_text}"
@@ -315,6 +307,7 @@ def retrieve_handbook(
 
     try:
 
+        # search.py converts this query into embeddings and returns the closest handbook chunks.
         results = handbook_search(
             retrieval_query,
             k=k,
@@ -501,6 +494,7 @@ def get_handbook_content(
 # PYTHON-VERIFIED ALTERNATIVES
 # ============================================================
 
+# Find other courses that Python confirms the student can take.
 def get_eligible_alternatives(
     student_id,
     blocked_course,
@@ -544,6 +538,7 @@ def get_eligible_alternatives(
 # FINAL REPLY VALIDATION
 # ============================================================
 
+# Check that the AI response contains only facts/pages/numbers supplied by trusted logic.
 def validate_reply(
     reply,
     reasons,
@@ -564,6 +559,7 @@ def validate_reply(
         reply_lower.split()
     )
 
+    # Every verified blocking reason must appear in the final AI response.
     for reason in reasons or []:
 
         normalized_reason = " ".join(
@@ -577,6 +573,7 @@ def validate_reply(
                 f"Missing reason: {reason}",
             )
 
+    # Every required handbook page must also be mentioned in the response.
     for page in pages or []:
 
         if page.lower() not in reply_lower:
@@ -684,6 +681,7 @@ def validate_reply(
 # SAFE FINAL RESPONSE
 # ============================================================
 
+# Build a deterministic response when the AI response fails validation.
 def make_safe_reply(
     reasons,
     pages,
@@ -767,6 +765,7 @@ def make_safe_reply(
 # REPLY.PY CONNECTION
 # ============================================================
 
+# Connect the verified Python/RAG data to reply.py to generate the final response.
 def generate_reply(
     reasons,
     handbook_content,
@@ -787,6 +786,10 @@ def generate_reply(
     """
 
     alternatives = alternatives or []
+
+    # Reset UI debug values for this request.
+    ai_attempt = ""
+    ai_validation_error = ""
 
     if ai_generate_reply is not None:
 
@@ -811,7 +814,18 @@ def generate_reply(
             except Exception:
                 pass
 
+            # reply.py generates the natural-language answer using only the supplied context.
             result = ai_generate_reply(**reply_kwargs)
+
+            # reply.py keeps the raw model draft and validation error
+            # so Streamlit can display them instead of only the terminal log.
+            if reply_module is not None:
+                ai_attempt = str(
+                    getattr(reply_module, "last_ai_response", "") or ""
+                )
+                ai_validation_error = str(
+                    getattr(reply_module, "last_ai_validation_error", "") or ""
+                )
 
             if (
                 isinstance(result, tuple)
@@ -848,6 +862,7 @@ def generate_reply(
 
                 source = "AI"
 
+            # Validate the generated response before allowing it to reach the user.
             valid, message = (
                 validate_reply(
                     reply,
@@ -859,7 +874,12 @@ def generate_reply(
 
             if valid:
 
+                st.session_state["last_ai_attempt"] = ai_attempt
+                st.session_state["last_ai_validation_error"] = ""
                 return reply, source
+
+            st.session_state["last_ai_attempt"] = ai_attempt
+            st.session_state["last_ai_validation_error"] = ai_validation_error or message
 
             print(
                 f"App validation failed: {message}"
@@ -867,9 +887,15 @@ def generate_reply(
 
         except Exception as error:
 
+            st.session_state["last_ai_attempt"] = ai_attempt
+            st.session_state["last_ai_validation_error"] = str(error)
+
             print(
                 f"reply.py failed: {error}"
             )
+
+    st.session_state["last_ai_attempt"] = ai_attempt
+    st.session_state["last_ai_validation_error"] = ai_validation_error
 
     return (
         make_safe_reply(
@@ -905,6 +931,7 @@ def pages_cover_expected(
     )
 
 
+# Run one complete Task 10 test from course identification to final validation.
 def run_task10_case(
     test
 ):
@@ -919,7 +946,7 @@ def run_task10_case(
     ]
 
     # --------------------------------------------------------
-    # Step 1 - course identification
+    # Step 1: identify which course the student is asking about.
     # --------------------------------------------------------
 
     course_code = identify_course(
@@ -952,7 +979,7 @@ def run_task10_case(
         }
 
     # --------------------------------------------------------
-    # Step 2 - Python rules
+    # UI workflow Step 2: let the backend check eligibility.
     # --------------------------------------------------------
 
     status, data = api_get(
@@ -990,7 +1017,7 @@ def run_task10_case(
     )
 
     # --------------------------------------------------------
-    # Step 3 - REAL VECTOR / RAG retrieval
+    # Step 3: retrieve supporting handbook information using vector search/RAG.
     # --------------------------------------------------------
 
     (
@@ -1025,7 +1052,7 @@ def run_task10_case(
         )
 
     # --------------------------------------------------------
-    # Step 4 - Python alternatives
+    # Step 4: if the course is blocked, find alternatives using Python rules.
     # --------------------------------------------------------
 
     alternatives = []
@@ -1047,7 +1074,7 @@ def run_task10_case(
         )
 
     # --------------------------------------------------------
-    # Step 5 - reply.py
+    # Step 5: send the verified facts and handbook context to reply.py.
     # --------------------------------------------------------
 
     reply, source = generate_reply(
@@ -1058,8 +1085,11 @@ def run_task10_case(
         alternatives=alternatives,
     )
 
+    ai_attempt = st.session_state.get("last_ai_attempt", "")
+    ai_validation_error = st.session_state.get("last_ai_validation_error", "")
+
     # --------------------------------------------------------
-    # Step 6 - final safety validation
+    # Step 6: validate the generated answer again before displaying it.
     # --------------------------------------------------------
 
     reply_pass, validation_message = (
@@ -1091,7 +1121,7 @@ def run_task10_case(
         source = "SAFE"
 
     # --------------------------------------------------------
-    # Step 7 - compare expected result
+    # Step 7: compare the actual result against the expected Task 10 result.
     # --------------------------------------------------------
 
     reasons_pass = (
@@ -1124,6 +1154,8 @@ def run_task10_case(
         "reply_pass": reply_pass,
         "validation_message": validation_message,
         "reply_source": source,
+        "ai_attempt": ai_attempt,
+        "ai_validation_error": ai_validation_error,
         "alternatives": alternatives,
         "overall": overall,
     }
@@ -1133,6 +1165,7 @@ def run_task10_case(
 # STREAMLIT PAGE
 # ============================================================
 
+# Display the main application title.
 st.title(
     "🎓 Course Enrolment Assistant"
 )
@@ -1173,6 +1206,7 @@ student_question = st.text_area(
     key="ai_question",
 )
 
+# Start the complete AI → Python → RAG → reply workflow when the user clicks the button.
 if st.button(
     "Ask Assistant",
     type="primary",
@@ -1193,7 +1227,7 @@ if st.button(
     else:
 
         # ----------------------------------------------------
-        # Step 1 - course
+        # UI workflow Step 1: identify the requested course.
         # ----------------------------------------------------
 
         with st.spinner(
@@ -1255,7 +1289,7 @@ if st.button(
                 )
 
                 # --------------------------------------------
-                # Step 3 - REAL RAG
+                # UI workflow Step 3: retrieve supporting handbook content.
                 # --------------------------------------------
 
                 with st.spinner(
@@ -1301,7 +1335,7 @@ if st.button(
                     )
 
                 # --------------------------------------------
-                # Step 4 - alternatives
+                # UI workflow Step 4: calculate eligible alternative courses.
                 # --------------------------------------------
 
                 alternatives = []
@@ -1327,7 +1361,7 @@ if st.button(
                         )
 
                 # --------------------------------------------
-                # Step 5 - final reply
+                # UI workflow Step 5: generate the student's final answer.
                 # --------------------------------------------
 
                 with st.spinner(
@@ -1344,8 +1378,11 @@ if st.button(
                         )
                     )
 
+                ai_attempt = st.session_state.get("last_ai_attempt", "")
+                ai_validation_error = st.session_state.get("last_ai_validation_error", "")
+
                 # --------------------------------------------
-                # Step 6 - validate
+                # UI workflow Step 6: verify that the answer is factually safe.
                 # --------------------------------------------
 
                 reply_pass, validation_message = (
@@ -1377,7 +1414,7 @@ if st.button(
                     source = "SAFE"
 
                 # --------------------------------------------
-                # DECISION
+                # Show the trusted Python enrolment decision separately from the AI wording.
                 # --------------------------------------------
 
                 st.subheader(
@@ -1403,7 +1440,7 @@ if st.button(
                         )
 
                 # --------------------------------------------
-                # RAG RESULTS
+                # Show the handbook chunks returned by the vector search.
                 # --------------------------------------------
 
                 st.subheader(
@@ -1474,7 +1511,19 @@ if st.button(
                         )
 
                 # --------------------------------------------
-                # FINAL REPLY
+                # AI DRAFT (BEFORE VALIDATION)
+                # --------------------------------------------
+
+                if ai_attempt:
+                    with st.expander("🤖 AI Draft (before validation)", expanded=False):
+                        st.code(ai_attempt, language="text")
+                        if ai_validation_error:
+                            st.error(
+                                f"AI draft rejected: {ai_validation_error}"
+                            )
+
+                # --------------------------------------------
+                # Display the final validated response to the student.
                 # --------------------------------------------
 
                 st.subheader(
@@ -1505,6 +1554,7 @@ st.write(
     "Python reasons, RAG handbook retrieval, and final reply."
 )
 
+# Run the complete predefined Task 10 test suite.
 if st.button(
     "▶ Run All Six Task 10 Tests",
     type="primary",
@@ -1690,6 +1740,17 @@ if (
                     f"score={item.get('score')}"
                 )
 
+        if result.get("ai_attempt"):
+            with st.expander("🤖 AI Draft (before validation)", expanded=False):
+                st.code(
+                    result.get("ai_attempt", ""),
+                    language="text",
+                )
+                if result.get("ai_validation_error"):
+                    st.error(
+                        f"AI draft rejected: {result.get('ai_validation_error')}"
+                    )
+
         st.write(
             "**Final reply:**"
         )
@@ -1849,6 +1910,7 @@ if (
 # 3. STUDENT LOOKUP
 # ============================================================
 
+# Section for retrieving a student's details and current enrolments.
 st.header(
     "3. Student Lookup"
 )
@@ -1978,6 +2040,7 @@ if st.button(
 # 4. COURSE LIST
 # ============================================================
 
+# Section for displaying all courses and their current capacity.
 st.header(
     "4. Course List"
 )
@@ -2072,6 +2135,7 @@ if st.button(
 # 5. MANUAL ENROLMENT CHECK
 # ============================================================
 
+# Section for manually checking one student/course combination.
 st.header(
     "5. Manual Enrolment Check"
 )
